@@ -178,18 +178,26 @@ def build_prompt(updates: list[dict[str, Any]]) -> str:
     prompt = (
         "You are an elite executive assistant preparing a polished daily progress report.\n"
         "Transform the provided structured project updates into a concise, professional, unified report with this structure:\n"
-        "1. Executive Summary (1-2 sentences summarizing the overall day)\n"
-        "2. Project Updates (Grouped by project name)\n"
-        "3. Next actions / Blockers\n\n"
+        "1. Executive Summary (A one-sentence impact statement of the day's achievements)\n"
+        "2. Project Execution (Grouped by project name)\n"
+        "   - Status: Clear status update based on notes\n"
+        "   - Key Achievements: Bullet points of work completed\n"
+        "   - Next Steps: Bullet points of upcoming actions (Only use the provided next steps)\n"
+        "   - Blockers: Any impediments noted (Only use the provided blockers)\n\n"
         "Guidelines:\n"
-        "- Be punchy, specific, and executive-friendly.\n"
-        "- Preserve facts; do not invent milestones.\n"
-        "- Use bullets where they improve readability.\n"
-        "- CRITICAL: If a project update includes an `Attached Image URL`, you MUST embed it directly in the markdown using the syntax `![Proof of Work](<the_url>)` immediately under that project's section.\n\n"
+        "- Tone: Technical, precise, and executive-friendly. Avoid fluff.\n"
+        "- Standard: Use industry-standard professional terminology.\n"
+        "- Constraint: DO NOT invent milestones or next steps. If next steps/blockers are empty, do not create them.\n"
+        "- CRITICAL: If an `Attached Image URL` is provided, embed it using `![Proof of Work](<the_url>)` at the end of that project's section.\n\n"
         "Here are the engineer's raw updates:\n"
     )
     for update in updates:
-        prompt += f"\nProject: {update['project_name']}\nNotes: {update['work_notes']}\n"
+        prompt += f"\nProject: {update['project_name']}\n"
+        prompt += f"Execution Notes: {update['work_notes']}\n"
+        if update.get('next_steps'):
+            prompt += f"Proposed Next Steps: {update['next_steps']}\n"
+        if update.get('blockers'):
+            prompt += f"Current Blockers: {update['blockers']}\n"
         if update.get('image_url'):
             prompt += f"Attached Image URL: {update['image_url']}\n"
     return prompt

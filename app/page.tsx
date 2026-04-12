@@ -150,23 +150,51 @@ function LoadingSpinner({ className = "h-6 w-6" }: { className?: string }) {
 function CleanReport({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
-    <div className="flex flex-col gap-4 text-[color:var(--foreground)]">
+    <div className="flex flex-col gap-5 text-[color:var(--foreground)] font-sans antialiased">
       {lines.map((line, i) => {
         if (!line.trim()) return null;
+        
+        // Image Handling
         const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
         if (imageMatch) {
           return (
-            <div key={i} className="my-6 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)] shadow-sm">
-              <img src={imageMatch[1]} alt="Attached visual" className="w-full object-cover" />
+            <div key={i} className="my-8 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)] shadow-md group/img relative">
+              <img src={imageMatch[1]} alt="Attached visual" className="w-full object-cover transition-transform duration-700 group-hover/img:scale-105" />
+              <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-white/10 opacity-0 group-hover/img:opacity-100 transition-opacity">Visual Proof</div>
             </div>
           );
         }
-        const isHeader = line.startsWith("#");
+
+        // Professional Typography Logic
+        const isHeader = line.startsWith("#") || line.match(/^\d\.\s/);
+        const isSubHeader = line.match(/^\s*-\s\w+:/);
         const isBullet = line.trim().startsWith("-") || line.trim().startsWith("*");
+        
         let content = line.replace(/^[#\-*]+\s*/, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
-        if (isHeader) return <h3 key={i} className="mt-6 font-heading text-xl font-bold text-[color:var(--foreground)]">{content}</h3>;
-        if (isBullet) return <div key={i} className="relative pl-5 text-base leading-relaxed text-[color:var(--muted-foreground)] before:absolute before:left-0 before:top-2.5 before:h-[6px] before:w-[6px] before:rounded-full before:bg-primary/40">{content}</div>;
-        return <p key={i} className="text-base leading-relaxed text-[color:var(--muted-foreground)]">{content}</p>;
+
+        if (isHeader) {
+          return <h3 key={i} className="mt-8 mb-2 font-heading text-lg font-bold text-primary tracking-tight border-b border-primary/10 pb-2">{content}</h3>;
+        }
+
+        if (isSubHeader) {
+          const [label, ...rest] = content.split(":");
+          return (
+            <div key={i} className="mt-3 flex items-start gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wider text-primary mt-1 min-w-[100px] shrink-0">{label.trim()}</span>
+              <span className="text-sm font-medium text-[color:var(--foreground)] opacity-90 leading-relaxed">{rest.join(":").trim()}</span>
+            </div>
+          );
+        }
+
+        if (isBullet) {
+          return (
+            <div key={i} className="relative pl-6 text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] before:absolute before:left-0 before:top-2.5 before:h-[5px] before:w-[5px] before:rounded-full before:bg-primary/30">
+              {content}
+            </div>
+          );
+        }
+
+        return <p key={i} className="text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] opacity-90">{content}</p>;
       })}
     </div>
   );
@@ -263,6 +291,8 @@ type ProjectUpdateState = {
   id: string;
   projectName: string;
   workNotes: string;
+  nextSteps?: string;
+  blockers?: string;
   selectedImage: File | null;
   uploadedImageUrl: string | null;
 };
@@ -291,7 +321,7 @@ export default function Dashboard() {
   // Compose Report State
   const [reportDate, setReportDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [updates, setUpdates] = useState<ProjectUpdateState[]>([
-    { id: "1", projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }
+    { id: "1", projectName: "", workNotes: "", nextSteps: "", blockers: "", selectedImage: null, uploadedImageUrl: null }
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -376,7 +406,13 @@ export default function Dashboard() {
       }
       const payload = {
         report_date: reportDate,
-        updates: finalUpdates.map(u => ({ project_name: u.projectName.trim(), work_notes: u.workNotes.trim(), image_url: u.uploadedImageUrl }))
+        updates: finalUpdates.map(u => ({ 
+          project_name: u.projectName.trim(), 
+          work_notes: u.workNotes.trim(), 
+          next_steps: u.nextSteps?.trim(),
+          blockers: u.blockers?.trim(),
+          image_url: u.uploadedImageUrl 
+        }))
       };
       await fetchWithAuth(`${API_BASE_URL}/submit-report`, {
         method: "POST",
@@ -1079,8 +1115,19 @@ export default function Dashboard() {
                             </div>
 
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Details</label>
-                              <textarea required minLength={5} value={update.workNotes} onChange={(e) => { const newU = [...updates]; newU[idx].workNotes = e.target.value; setUpdates(newU); }} placeholder="Summary of work completed..." className="w-full min-h-[100px] p-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all resize-none" />
+                              <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Work Notes (Achievements)</label>
+                              <textarea required minLength={5} value={update.workNotes} onChange={(e) => { const newU = [...updates]; newU[idx].workNotes = e.target.value; setUpdates(newU); }} placeholder="What was achieved?" className="w-full min-h-[80px] p-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all resize-none" />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Next Steps (Optional)</label>
+                                <input type="text" value={update.nextSteps} onChange={(e) => { const newU = [...updates]; newU[idx].nextSteps = e.target.value; setUpdates(newU); }} placeholder="Planned actions..." className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all" />
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Blockers (Optional)</label>
+                                <input type="text" value={update.blockers} onChange={(e) => { const newU = [...updates]; newU[idx].blockers = e.target.value; setUpdates(newU); }} placeholder="Any impediments?" className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all" />
+                              </div>
                             </div>
 
                             <div className="flex flex-col gap-1.5">
