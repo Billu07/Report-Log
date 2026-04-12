@@ -47,10 +47,14 @@ create table if not exists public.comments (
 
 create table if not exists public.reactions (
   id uuid primary key default gen_random_uuid(),
-  post_id uuid not null references public.posts(id) on delete cascade,
+  post_id uuid references public.posts(id) on delete cascade,
+  comment_id uuid references public.comments(id) on delete cascade,
   author_email text not null references public.profiles(user_email),
   emoji text not null,
   created_at timestamptz not null default now(),
-  unique(post_id, author_email, emoji)
+  check (
+    (post_id is not null and comment_id is null) or
+    (post_id is null and comment_id is not null)
+  )
 );
 

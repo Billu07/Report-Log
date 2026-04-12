@@ -29,7 +29,17 @@ import {
   MessageSquare,
   SmilePlus,
   Camera,
-  Activity
+  Activity,
+  Send,
+  Heart,
+  Rocket,
+  Flame,
+  PartyPopper,
+  Eye,
+  CheckCircle2,
+  MoreHorizontal,
+  Trash2,
+  AtSign
 } from "lucide-react";
 import { useUploadThing } from "../utils/uploadthing";
 
@@ -55,7 +65,8 @@ type ProfileRecord = {
 
 type ReactionRecord = {
   id: string;
-  post_id: string;
+  post_id?: string;
+  comment_id?: string;
   author_email: string;
   emoji: string;
 };
@@ -68,6 +79,7 @@ type CommentRecord = {
   created_at: string;
   author_name?: string;
   author_avatar?: string;
+  reactions: ReactionRecord[];
 };
 
 type PostRecord = {
@@ -89,82 +101,46 @@ const CEO_EMAIL = process.env.NEXT_PUBLIC_CEO_EMAIL?.toLowerCase() ?? "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const EMOJI_OPTIONS = [
+  { char: "👍", label: "Thumbs Up" },
+  { char: "🚀", label: "Rocket" },
+  { char: "🔥", label: "Fire" },
+  { char: "🎉", label: "Party" },
+  { char: "👀", label: "Eyes" },
+];
+
 // --- API FETCHERS ---
-async function requestReports(token: string): Promise<ReportRecord[]> {
-  const response = await fetch(`${API_BASE_URL}/reports`, {
-    headers: { "Authorization": `Bearer ${token}` }, cache: "no-store",
+async function fetchWithAuth(url: string, options: RequestInit = {}, token: string) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      "Authorization": `Bearer ${token}`,
+    },
   });
-  if (!response.ok) throw new Error(`Failed to fetch reports`);
+  if (response.status === 204) return null;
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error(`API Error ${response.status}:`, errorBody);
+    throw new Error(`Request failed: ${response.status}`);
+  }
   return response.json();
 }
 
-async function createReport(payload: any, token: string): Promise<{ provider: string; report: ReportRecord }> {
-  const response = await fetch(`${API_BASE_URL}/submit-report`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) throw new Error("Submission failed");
-  return response.json();
+// --- UI COMPONENTS ---
+
+function LoadingSpinner({ className = "h-6 w-6" }: { className?: string }) {
+  return (
+    <div className={className}>
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+        className="h-full w-full border-2 border-primary/20 border-t-primary rounded-full"
+      />
+    </div>
+  );
 }
 
-async function requestProfile(token: string): Promise<ProfileRecord> {
-  const response = await fetch(`${API_BASE_URL}/profiles/me`, {
-    headers: { "Authorization": `Bearer ${token}` }
-  });
-  if (!response.ok) throw new Error("Failed to fetch profile");
-  return response.json();
-}
-
-async function updateProfile(payload: Partial<ProfileRecord>, token: string): Promise<ProfileRecord> {
-  const response = await fetch(`${API_BASE_URL}/profiles/me`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) throw new Error("Failed to update profile");
-  return response.json();
-}
-
-async function requestPosts(token: string): Promise<PostRecord[]> {
-  const response = await fetch(`${API_BASE_URL}/posts`, {
-    headers: { "Authorization": `Bearer ${token}` }, cache: "no-store",
-  });
-  if (!response.ok) throw new Error(`Failed to fetch posts`);
-  return response.json();
-}
-
-async function createPost(payload: { content: string; image_url?: string | null }, token: string): Promise<PostRecord> {
-  const response = await fetch(`${API_BASE_URL}/posts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) throw new Error("Post failed");
-  return response.json();
-}
-
-async function createComment(postId: string, content: string, token: string): Promise<CommentRecord> {
-  const response = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({ content }),
-  });
-  if (!response.ok) throw new Error("Comment failed");
-  return response.json();
-}
-
-async function toggleReaction(postId: string, emoji: string, token: string): Promise<ReactionRecord> {
-  const response = await fetch(`${API_BASE_URL}/posts/${postId}/reactions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({ emoji }),
-  });
-  if (!response.ok) throw new Error("Reaction failed");
-  return response.json();
-}
-
-// --- HELPER COMPONENT ---
 function CleanReport({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
@@ -174,7 +150,7 @@ function CleanReport({ text }: { text: string }) {
         const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
         if (imageMatch) {
           return (
-            <div key={i} className="my-6 overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)] shadow-sm">
+            <div key={i} className="my-6 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)] shadow-sm">
               <img src={imageMatch[1]} alt="Attached visual" className="w-full object-cover" />
             </div>
           );
@@ -183,7 +159,7 @@ function CleanReport({ text }: { text: string }) {
         const isBullet = line.trim().startsWith("-") || line.trim().startsWith("*");
         let content = line.replace(/^[#\-*]+\s*/, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
         if (isHeader) return <h3 key={i} className="mt-6 font-heading text-xl font-bold text-[color:var(--foreground)]">{content}</h3>;
-        if (isBullet) return <div key={i} className="relative pl-5 text-base leading-relaxed text-[color:var(--muted-foreground)] before:absolute before:left-0 before:top-2.5 before:h-[6px] before:w-[6px] before:rounded-full before:bg-[color:var(--border)]">{content}</div>;
+        if (isBullet) return <div key={i} className="relative pl-5 text-base leading-relaxed text-[color:var(--muted-foreground)] before:absolute before:left-0 before:top-2.5 before:h-[6px] before:w-[6px] before:rounded-full before:bg-primary/40">{content}</div>;
         return <p key={i} className="text-base leading-relaxed text-[color:var(--muted-foreground)]">{content}</p>;
       })}
     </div>
@@ -222,47 +198,47 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-[color:var(--background)] p-4 text-[color:var(--foreground)]">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card-elevated w-full max-w-md p-8 sm:p-12">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--primary)]/10 text-[color:var(--primary)]">
-            <img src="/logo.png" alt="Company Logo" className="h-10 w-10 object-contain" />
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="card-elevated w-full max-w-md p-8 sm:p-12">
+        <div className="mb-10 text-center">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/5 p-3">
+            <img src="/logo.png" alt="Company Logo" className="h-full w-full object-contain" />
           </div>
-          <h1 className="font-heading text-2xl font-bold tracking-tight">Autolinium</h1>
-          <p className="mt-2 text-sm text-[color:var(--muted-foreground)]">Sign in to your execution log.</p>
+          <h1 className="font-heading text-3xl font-extrabold tracking-tight text-primary">Autolinium</h1>
+          <p className="mt-2 text-sm text-[color:var(--muted-foreground)] font-medium">Enterprise Execution Log</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           {isSignUp && (
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Full Name</label>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Full Name</label>
               <div className="relative">
-                <UserIcon size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
-                <input required type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="input-field pl-10" placeholder="John Doe" />
+                <UserIcon size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+                <input required type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="input-field pl-11" placeholder="John Doe" />
               </div>
             </div>
           )}
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Email Address</label>
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Email Address</label>
             <div className="relative">
-              <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
-              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input-field pl-10" placeholder="you@company.com" />
+              <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input-field pl-11" placeholder="you@company.com" />
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Password</label>
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Password</label>
             <div className="relative">
-              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
-              <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input-field pl-10" placeholder="••••••••" />
+              <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+              <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input-field pl-11" placeholder="••••••••" />
             </div>
           </div>
-          {error && <div className="rounded-lg bg-[color:var(--destructive)]/10 p-3 text-sm text-[color:var(--destructive)]">{error}</div>}
-          <button type="submit" disabled={isLoading} className="button-primary mt-2 w-full">
-            {isLoading ? <Loader2 size={18} className="animate-spin" /> : isSignUp ? "Create Account" : "Sign In"}
+          {error && <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">{error}</div>}
+          <button type="submit" disabled={isLoading} className="button-primary mt-4 w-full h-12 text-base">
+            {isLoading ? <LoadingSpinner className="h-5 w-5 border-t-white border-white/20" /> : isSignUp ? "Create Account" : "Sign In"}
           </button>
         </form>
         <div className="mt-8 text-center text-sm text-[color:var(--muted-foreground)]">
           {isSignUp ? "Already have an account? " : "Need an account? "}
-          <button onClick={() => { setIsSignUp(!isSignUp); setError(null); }} className="font-semibold text-[color:var(--primary)] hover:underline">
+          <button onClick={() => { setIsSignUp(!isSignUp); setError(null); }} className="font-bold text-primary hover:underline">
             {isSignUp ? "Sign In" : "Sign Up"}
           </button>
         </div>
@@ -288,6 +264,7 @@ export default function Dashboard() {
   
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
+  const [profiles, setAllProfiles] = useState<ProfileRecord[]>([]);
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -331,15 +308,17 @@ export default function Dashboard() {
     async function loadAll() {
       setIsLoading(true);
       try {
-        const [repData, postData, profData] = await Promise.all([
-          requestReports(session!.access_token),
-          requestPosts(session!.access_token),
-          requestProfile(session!.access_token)
+        const [repData, postData, profData, allProfs] = await Promise.all([
+          fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session!.access_token),
+          fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session!.access_token),
+          fetchWithAuth(`${API_BASE_URL}/profiles/me`, {}, session!.access_token),
+          fetchWithAuth(`${API_BASE_URL}/profiles/all`, {}, session!.access_token).catch(() => [])
         ]);
         if (!isCancelled) {
-          setReports(repData.map((r, i) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
+          setReports(repData.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
           setPosts(postData);
           setProfile(profData);
+          setAllProfiles(allProfs);
         }
       } catch (err) { console.error(err); } 
       finally { if (!isCancelled) setIsLoading(false); }
@@ -352,7 +331,7 @@ export default function Dashboard() {
   
   useEffect(() => {
     if (session && !isCEO && activeTab === "dashboard") {
-      setActiveTab("reports"); // Redirect away from CEO tab
+      setActiveTab("reports");
     }
   }, [session, isCEO, activeTab]);
 
@@ -377,9 +356,13 @@ export default function Dashboard() {
         report_date: reportDate,
         updates: finalUpdates.map(u => ({ project_name: u.projectName.trim(), work_notes: u.workNotes.trim(), image_url: u.uploadedImageUrl }))
       };
-      await createReport(payload, session.access_token);
-      const data = await requestReports(session.access_token);
-      setReports(data.map((r, i) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
+      await fetchWithAuth(`${API_BASE_URL}/submit-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }, session.access_token);
+      const data = await fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session.access_token);
+      setReports(data.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
       setUpdates([{ id: Math.random().toString(), projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }]);
       setIsComposing(false);
     } catch (err) { console.error(err); } finally { setIsSubmitting(false); }
@@ -395,28 +378,58 @@ export default function Dashboard() {
         const uploadRes = await startUpload([postImage]);
         if (uploadRes && uploadRes.length > 0) finalImageUrl = uploadRes[0].url;
       }
-      await createPost({ content: postContent.trim(), image_url: finalImageUrl }, session.access_token);
-      const newPosts = await requestPosts(session.access_token);
+      await fetchWithAuth(`${API_BASE_URL}/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: postContent.trim(), image_url: finalImageUrl }),
+      }, session.access_token);
+      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
       setPosts(newPosts);
       setPostContent("");
       setPostImage(null);
     } catch (err) { console.error(err); } finally { setIsPosting(false); }
   }
 
+  async function handleDeletePost(postId: string) {
+    if (!session || !confirm("Delete this post?")) return;
+    try {
+      await fetchWithAuth(`${API_BASE_URL}/posts/${postId}`, { method: "DELETE" }, session.access_token);
+      setPosts(prev => prev.filter(p => p.id !== postId));
+    } catch (err) { console.error(err); }
+  }
+
   async function handleCommentSubmit(postId: string, content: string) {
     if (!session || !content.trim()) return;
     try {
-      await createComment(postId, content.trim(), session.access_token);
-      const newPosts = await requestPosts(session.access_token);
+      await fetchWithAuth(`${API_BASE_URL}/posts/${postId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: content.trim() }),
+      }, session.access_token);
+      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
       setPosts(newPosts);
     } catch (err) { console.error(err); }
   }
 
-  async function handleReaction(postId: string, emoji: string) {
+  async function handleDeleteComment(postId: string, commentId: string) {
+    if (!session || !confirm("Delete this comment?")) return;
+    try {
+      await fetchWithAuth(`${API_BASE_URL}/comments/${commentId}`, { method: "DELETE" }, session.access_token);
+      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
+      setPosts(newPosts);
+    } catch (err) { console.error(err); }
+  }
+
+  async function handleReaction(id: string, emoji: string, type: "post" | "comment") {
     if (!session) return;
     try {
-      await toggleReaction(postId, emoji, session.access_token);
-      const newPosts = await requestPosts(session.access_token);
+      const url = type === "post" ? `${API_BASE_URL}/posts/${id}/reactions` : `${API_BASE_URL}/comments/${id}/reactions`;
+      await fetchWithAuth(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      }, session.access_token);
+      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
       setPosts(newPosts);
     } catch (err) { console.error(err); }
   }
@@ -428,10 +441,13 @@ export default function Dashboard() {
       const uploadRes = await startUpload([file]);
       if (uploadRes && uploadRes.length > 0) {
         const url = uploadRes[0].url;
-        const newProf = await updateProfile(type === "avatar" ? { avatar_url: url } : { cover_url: url }, session.access_token);
+        const newProf = await fetchWithAuth(`${API_BASE_URL}/profiles/me`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(type === "avatar" ? { avatar_url: url } : { cover_url: url })
+        }, session.access_token);
         setProfile(newProf);
-        // Refresh posts to show new avatar instantly
-        const newPosts = await requestPosts(session.access_token);
+        const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
         setPosts(newPosts);
       }
     } catch (err) { console.error(err); } finally { setIsUpdatingProfile(false); }
@@ -442,11 +458,24 @@ export default function Dashboard() {
     if (!session) return;
     setIsUpdatingProfile(true);
     try {
-      const newProf = await updateProfile({ bio, full_name: name }, session.access_token);
+      const newProf = await fetchWithAuth(`${API_BASE_URL}/profiles/me`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bio, full_name: name })
+      }, session.access_token);
       setProfile(newProf);
-      const newPosts = await requestPosts(session.access_token);
+      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
       setPosts(newPosts);
     } catch (err) { console.error(err); } finally { setIsUpdatingProfile(false); }
+  }
+
+  function insertMention(postId: string, name: string) {
+    const input = document.getElementById(`comment-input-${postId}`) as HTMLInputElement;
+    if (input) {
+      const current = input.value;
+      input.value = `${current}@${name} `;
+      input.focus();
+    }
   }
 
   if (!mounted) return null;
@@ -456,8 +485,8 @@ export default function Dashboard() {
       return (
         <div className="flex h-screen items-center justify-center bg-[color:var(--background)] p-6 text-center text-[color:var(--foreground)]">
           <div className="card-elevated p-8 max-w-lg">
-            <h2 className="font-heading text-2xl font-bold text-[color:var(--destructive)] mb-4">Configuration Error</h2>
-            <p className="text-[color:var(--muted-foreground)]">Missing ENV vars. Check .env.local.</p>
+            <h2 className="font-heading text-2xl font-bold text-destructive mb-4">Configuration Error</h2>
+            <p className="text-[color:var(--muted-foreground)] font-medium">Missing environment variables. Please check your configuration.</p>
           </div>
         </div>
       );
@@ -467,199 +496,258 @@ export default function Dashboard() {
 
   const uniqueAuthors = Array.from(new Set(reports.map(r => r.author_name).filter(Boolean)));
   const displayedReports = selectedAuthor ? reports.filter(r => r.author_name === selectedAuthor) : reports;
-  const myReports = reports.filter(r => r.author_name === (session.user.user_metadata.full_name || session.user.email));
+  const myReports = reports.filter(r => r.author_name === (profile?.full_name || session.user.user_metadata.full_name || session.user.email));
   const reportsToShow = isCEO ? displayedReports : myReports;
 
-  // Profile Avatar helper
   const userAvatar = profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || session.user.email || "U")}&background=random`;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[color:var(--background)] text-[color:var(--foreground)]">
+    <div className="flex h-screen w-full overflow-hidden bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20">
       
       {/* SIDEBAR */}
-      <aside className="flex w-64 flex-col border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 shadow-sm z-20">
-        <div className="mb-8 px-2 pt-2 flex items-center gap-3">
-          <img src="/logo.png" alt="Company Logo" className="h-8 w-8 object-contain" />
+      <aside className="flex w-72 flex-col border-r border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm z-20">
+        <div className="mb-10 px-2 flex items-center gap-4 group">
+          <div className="h-10 w-10 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+            <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+          </div>
           <div>
-            <h1 className="font-heading text-xl font-bold tracking-tight">Autolinium</h1>
-            <p className="text-xs text-[color:var(--muted-foreground)]">Workspace</p>
+            <h1 className="font-heading text-xl font-bold tracking-tight text-primary">Autolinium</h1>
+            <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-[color:var(--muted-foreground)] opacity-60">Operations</p>
           </div>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-2">
+        <nav className="flex flex-1 flex-col gap-1">
           {isCEO && (
-            <button onClick={() => { setActiveTab("dashboard"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }} className={`sidebar-nav-item ${activeTab === "dashboard" ? "active" : ""}`}>
+            <button onClick={() => { setActiveTab("dashboard"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "dashboard" ? "active" : ""}`}>
               <LayoutDashboard size={18} /> CEO Dashboard
             </button>
           )}
-          <button onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }} className={`sidebar-nav-item ${activeTab === "reports" && !selectedAuthor ? "active" : ""}`}>
-            <FileText size={18} /> {isCEO ? "All Briefings" : "My Briefings"}
+          <button onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "reports" && !selectedAuthor ? "active" : ""}`}>
+            <FileText size={18} /> {isCEO ? "Execution Logs" : "My Briefings"}
           </button>
-          <button onClick={() => { setActiveTab("feed"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item ${activeTab === "feed" ? "active" : ""}`}>
+          <button onClick={() => { setActiveTab("feed"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "feed" ? "active" : ""}`}>
             <Activity size={18} /> Company Feed
           </button>
-          <button onClick={() => { setActiveTab("profile"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item ${activeTab === "profile" ? "active" : ""}`}>
-            <UserIcon size={18} /> My Profile
+          <button onClick={() => { setActiveTab("profile"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "profile" ? "active" : ""}`}>
+            <UserIcon size={18} /> Profile
           </button>
-          <button onClick={() => { setActiveTab("settings"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item ${activeTab === "settings" ? "active" : ""}`}>
+          <button onClick={() => { setActiveTab("settings"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "settings" ? "active" : ""}`}>
             <Settings size={18} /> Settings
           </button>
         </nav>
 
-        <div className="mt-auto flex flex-col gap-4 border-t border-[color:var(--border)] pt-4">
-          <button onClick={() => setActiveTab("profile")} className="flex items-center gap-3 px-2 py-2 text-left hover:bg-[color:var(--muted)] rounded-lg transition-colors">
-            <div className="h-8 w-8 overflow-hidden rounded-full bg-[color:var(--muted)] shrink-0 border border-[color:var(--border)]">
+        <div className="mt-auto flex flex-col gap-4 border-t border-[color:var(--border)] pt-6">
+          <button onClick={() => setActiveTab("profile")} className="flex items-center gap-3 px-3 py-3 text-left hover:bg-[color:var(--muted)] rounded-xl transition-all group">
+            <div className="h-10 w-10 overflow-hidden rounded-full bg-primary/10 shrink-0 border border-primary/20 group-hover:ring-2 ring-primary/20 transition-all">
               <img src={userAvatar} alt="" className="h-full w-full object-cover" />
             </div>
             <div className="flex flex-col truncate">
-              <span className="truncate text-sm font-medium">{profile?.full_name || session.user.email}</span>
-              <span className="truncate text-xs text-[color:var(--muted-foreground)]">{session.user.email}</span>
+              <span className="truncate text-sm font-bold">{profile?.full_name || session.user.email}</span>
+              <span className="truncate text-[10px] font-semibold text-[color:var(--muted-foreground)] opacity-70">{session.user.email}</span>
             </div>
           </button>
           
-          <div className="flex items-center justify-between rounded-lg border border-[color:var(--border)] bg-[color:var(--input)] p-1">
-            <button onClick={() => setTheme("light")} className={`flex flex-1 items-center justify-center rounded-md p-1.5 transition-smooth ${theme === "light" ? "bg-[color:var(--card)] shadow-sm text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}><Sun size={14} /></button>
-            <button onClick={() => setTheme("dark")} className={`flex flex-1 items-center justify-center rounded-md p-1.5 transition-smooth ${theme === "dark" ? "bg-[color:var(--card)] shadow-sm text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}><Moon size={14} /></button>
+          <div className="flex items-center justify-between rounded-xl border border-[color:var(--border)] bg-[color:var(--input)] p-1.5">
+            <button onClick={() => setTheme("light")} className={`flex flex-1 items-center justify-center rounded-lg py-2 transition-all ${theme === "light" ? "bg-[color:var(--card)] shadow-sm text-primary" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}><Sun size={16} /></button>
+            <button onClick={() => setTheme("dark")} className={`flex flex-1 items-center justify-center rounded-lg py-2 transition-all ${theme === "dark" ? "bg-[color:var(--card)] shadow-sm text-primary" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}><Moon size={16} /></button>
           </div>
-          <button onClick={() => supabase.auth.signOut()} className="sidebar-nav-item mt-2 text-[color:var(--destructive)] hover:bg-[color:var(--destructive)]/10 hover:text-[color:var(--destructive)]"><LogOut size={18} /> Sign Out</button>
+          <button onClick={() => supabase.auth.signOut()} className="sidebar-nav-item h-11 mt-2 text-destructive hover:bg-destructive/5 hover:text-destructive border-transparent"><LogOut size={18} /> Sign Out</button>
         </div>
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto bg-[color:var(--background)] custom-scrollbar">
-        
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--background)]/80 px-8 backdrop-blur-md">
-          <h2 className="font-heading text-xl font-semibold capitalize">
-            {selectedReport ? "Briefing Details" : isComposing ? "Draft New Briefing" : activeTab === "reports" && selectedAuthor ? `${selectedAuthor}'s Execution Log` : activeTab === "dashboard" ? "Team Members" : activeTab.replace("-", " ")}
-          </h2>
+      <main className="flex-1 overflow-y-auto bg-[color:var(--background)] custom-scrollbar relative">
+        <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--background)]/80 px-10 backdrop-blur-xl">
+          <div className="flex items-center gap-4">
+            {selectedReport && (
+              <button onClick={() => setSelectedReport(null)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-[color:var(--muted)] transition-colors">
+                <ArrowLeft size={20} />
+              </button>
+            )}
+            <h2 className="font-heading text-2xl font-bold tracking-tight text-[color:var(--foreground)]">
+              {selectedReport ? "Briefing Details" : isComposing ? "Log Briefing" : activeTab === "reports" && selectedAuthor ? `${selectedAuthor}'s Execution` : activeTab === "dashboard" ? "Team Overview" : activeTab === "feed" ? "Company Feed" : activeTab}
+            </h2>
+          </div>
+          
           {!isComposing && !selectedReport && activeTab !== "profile" && activeTab !== "feed" && activeTab !== "settings" && (
-            <button onClick={() => setIsComposing(true)} className="button-primary fade-in"><Plus size={16} /> New Report</button>
+            <button onClick={() => setIsComposing(true)} className="button-primary h-11 px-6 rounded-xl font-bold tracking-tight shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5"><Plus size={18} /> Create Report</button>
           )}
         </header>
 
-        <div className="container mx-auto max-w-6xl py-8 px-4 sm:px-8">
+        <div className="container mx-auto max-w-6xl py-10 px-10">
           <AnimatePresence mode="wait">
-            
             {isLoading && (
-              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-center p-20">
-                <Loader2 size={32} className="animate-spin text-[color:var(--primary)]" />
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-[60vh] items-center justify-center">
+                <LoadingSpinner className="h-10 w-10" />
               </motion.div>
             )}
 
             {/* FEED VIEW */}
             {!isLoading && activeTab === "feed" && !isComposing && !selectedReport && (
-              <motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-8 max-w-2xl mx-auto">
-                
-                {/* Create Post Card */}
-                <div className="card-elevated p-6">
-                  <div className="flex gap-4">
-                    <img src={userAvatar} className="h-10 w-10 rounded-full border border-[color:var(--border)] object-cover shrink-0" alt="" />
-                    <form onSubmit={handlePostSubmit} className="flex-1 flex flex-col gap-4">
-                      <textarea
-                        value={postContent}
-                        onChange={(e) => setPostContent(e.target.value)}
-                        placeholder="Share a milestone, idea, or update with the team..."
-                        className="w-full resize-none bg-transparent outline-none text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] min-h-[60px]"
-                      />
+              <motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-10 max-w-2xl mx-auto">
+                <div className="card-elevated p-8 rounded-[2rem] border-primary/5 bg-gradient-to-br from-[color:var(--card)] to-[color:var(--muted)]/20 shadow-xl shadow-black/5">
+                  <div className="flex gap-5">
+                    <img src={userAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
+                    <form onSubmit={handlePostSubmit} className="flex-1 flex flex-col gap-5">
+                      <div className="relative">
+                        <textarea
+                          value={postContent}
+                          onChange={(e) => setPostContent(e.target.value)}
+                          placeholder="Share an update or tag a teammate with @..."
+                          className="w-full resize-none bg-transparent outline-none text-lg font-medium text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] min-h-[80px]"
+                        />
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {profiles.length > 0 && postContent.endsWith("@") && (
+                            <div className="absolute top-full left-0 z-50 bg-[color:var(--card)] border border-[color:var(--border)] rounded-xl shadow-2xl p-2 flex flex-col gap-1 max-h-48 overflow-y-auto w-48">
+                              {profiles.map(p => (
+                                <button key={p.id} type="button" onClick={() => setPostContent(postContent + p.full_name + " ")} className="flex items-center gap-2 p-2 hover:bg-[color:var(--muted)] rounded-lg text-sm text-left">
+                                  <img src={p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random`} className="h-6 w-6 rounded-full" alt=""/>
+                                  <span className="truncate">{p.full_name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       
                       {postImage && (
-                        <div className="relative rounded-lg overflow-hidden border border-[color:var(--border)] w-fit">
-                          <button type="button" onClick={() => setPostImage(null)} className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1 hover:bg-black/70"><X size={14}/></button>
-                          <img src={URL.createObjectURL(postImage)} className="h-32 object-cover" alt="Preview" />
+                        <div className="relative rounded-2xl overflow-hidden border border-[color:var(--border)] w-fit group">
+                          <button type="button" onClick={() => setPostImage(null)} className="absolute top-2 right-2 z-10 bg-black/60 backdrop-blur-md text-white rounded-full p-1.5 hover:bg-black/80 transition-colors"><X size={14}/></button>
+                          <img src={URL.createObjectURL(postImage)} className="h-40 object-cover" alt="Preview" />
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between border-t border-[color:var(--border)] pt-4">
-                        <label className="cursor-pointer text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)] transition-colors flex items-center gap-2 text-sm font-medium">
-                          <Camera size={18} /> Add Media
+                      <div className="flex items-center justify-between border-t border-[color:var(--border)] pt-5">
+                        <label className="cursor-pointer text-primary hover:text-primary/80 transition-all flex items-center gap-2.5 text-sm font-bold group">
+                          <div className="h-9 w-9 flex items-center justify-center rounded-xl bg-primary/5 group-hover:bg-primary/10"><Camera size={18} /></div>
+                          Attach Media
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => setPostImage(e.target.files?.[0] ?? null)} />
                         </label>
-                        <button type="submit" disabled={isPosting || (!postContent.trim() && !postImage)} className="button-primary text-sm py-1.5 px-4">
-                          {isPosting ? <Loader2 size={16} className="animate-spin" /> : "Post"}
+                        <button type="submit" disabled={isPosting || (!postContent.trim() && !postImage)} className="button-primary h-10 px-6 rounded-xl font-bold tracking-tight">
+                          {isPosting ? <LoadingSpinner className="h-4 w-4 border-t-white border-white/20" /> : "Post Briefing"}
                         </button>
                       </div>
                     </form>
                   </div>
                 </div>
 
-                {/* Posts Feed */}
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-10">
                   {posts.length === 0 ? (
-                    <div className="text-center p-12 text-[color:var(--muted-foreground)]">No posts yet. Be the first to share!</div>
+                    <div className="text-center py-20 px-8 rounded-[2rem] border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] font-medium italic">No transmissions found in the current sector.</div>
                   ) : (
                     posts.map(post => {
                       const postAvatar = post.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.author_name || "U")}&background=random`;
+                      const isMyPost = post.author_email === session.user.email;
                       
                       return (
-                        <div key={post.id} className="card-elevated flex flex-col overflow-hidden">
+                        <div key={post.id} className="card-elevated flex flex-col overflow-hidden rounded-[2.5rem] border-primary/5 hover:border-primary/10 transition-all duration-500 shadow-xl shadow-black/5">
                           {/* Post Header */}
-                          <div className="flex items-center gap-3 p-5">
-                            <img src={postAvatar} className="h-10 w-10 rounded-full border border-[color:var(--border)] object-cover shrink-0" alt="" />
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-[color:var(--foreground)]">{post.author_name}</span>
-                              <span className="text-xs text-[color:var(--muted-foreground)]">{formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}</span>
+                          <div className="flex items-center justify-between p-7">
+                            <div className="flex items-center gap-4">
+                              <img src={postAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
+                              <div className="flex flex-col">
+                                <span className="font-bold text-lg text-[color:var(--foreground)] tracking-tight">{post.author_name}</span>
+                                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-60">
+                                  <Activity size={10} className="text-primary" />
+                                  {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              {isMyPost && <button onClick={() => handleDeletePost(post.id)} className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-destructive/10 text-destructive transition-colors"><Trash2 size={18} /></button>}
+                              <button className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-[color:var(--muted)] text-[color:var(--muted-foreground)]"><MoreHorizontal size={20} /></button>
                             </div>
                           </div>
                           
                           {/* Post Content */}
-                          <div className="px-5 pb-4 whitespace-pre-wrap text-[color:var(--foreground)] leading-relaxed">
-                            {post.content}
+                          <div className="px-8 pb-6 whitespace-pre-wrap text-[color:var(--foreground)] leading-relaxed text-lg font-medium opacity-90">
+                            {post.content.split(/(@\w+\s\w+)/g).map((part, i) => 
+                              part.startsWith("@") ? <span key={i} className="text-primary font-bold">{part}</span> : part
+                            )}
                           </div>
                           
                           {/* Post Image */}
                           {post.image_url && (
-                            <img src={post.image_url} className="w-full max-h-[500px] object-cover border-y border-[color:var(--border)]" alt="" />
+                            <div className="px-4 pb-4">
+                              <img src={post.image_url} className="w-full max-h-[600px] object-cover rounded-[2rem] border border-[color:var(--border)]" alt="" />
+                            </div>
                           )}
                           
-                          {/* Post Actions (Reactions) */}
-                          <div className="p-3 border-b border-[color:var(--border)] bg-[color:var(--muted)]/20 flex flex-wrap gap-2">
-                            {["👍", "🚀", "🎉", "🔥", "👀"].map(emoji => {
-                              const count = post.reactions.filter(r => r.emoji === emoji).length;
-                              const isReacted = post.reactions.some(r => r.emoji === emoji && r.author_email === session.user.email);
-                              if (count === 0 && !isReacted) return null; // Only show active ones, plus a generic add button
-                              return (
-                                <button 
-                                  key={emoji} onClick={() => handleReaction(post.id, emoji)}
-                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm border transition-colors ${isReacted ? "bg-[color:var(--primary)]/10 border-[color:var(--primary)]/30 text-[color:var(--primary)]" : "bg-[color:var(--card)] border-[color:var(--border)] text-[color:var(--foreground)] hover:bg-[color:var(--muted)]"}`}
-                                >
-                                  <span>{emoji}</span> <span className="font-medium text-xs">{count}</span>
-                                </button>
-                              )
-                            })}
-                            
-                            {/* Generic add reaction (simplified to just adding a rocket for UI cleanliness, or a menu) */}
-                            <button onClick={() => handleReaction(post.id, "🔥")} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] hover:border-[color:var(--muted-foreground)] transition-colors">
-                              <SmilePlus size={14} /> React
-                            </button>
+                          {/* Post Actions */}
+                          <div className="px-8 py-5 border-t border-[color:var(--border)] bg-[color:var(--muted)]/5 flex items-center justify-between">
+                            <div className="flex flex-wrap gap-2.5">
+                              {EMOJI_OPTIONS.map(({ char }) => {
+                                const count = post.reactions.filter(r => r.emoji === char).length;
+                                const isReacted = post.reactions.some(r => r.emoji === char && r.author_email === session.user.email);
+                                return (
+                                  <button 
+                                    key={char} onClick={() => handleReaction(post.id, char, "post")}
+                                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-sm font-bold border transition-all duration-300 ${isReacted ? "bg-primary/10 border-primary/20 text-primary scale-105" : "bg-[color:var(--card)] border-[color:var(--border)] text-[color:var(--foreground)] hover:bg-[color:var(--muted)]"} ${count === 0 && !isReacted ? "hidden" : ""}`}
+                                  >
+                                    <span className="text-base leading-none">{char}</span> 
+                                    <span>{count}</span>
+                                  </button>
+                                )
+                              })}
+                              <div className="relative group/react">
+                                <button className="h-9 w-9 flex items-center justify-center rounded-xl border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-primary hover:border-primary/30 transition-all"><SmilePlus size={18} /></button>
+                                <div className="absolute bottom-full left-0 mb-2 p-2 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl shadow-2xl flex gap-1 opacity-0 pointer-events-none group-hover/react:opacity-100 group-hover/react:pointer-events-auto transition-all translate-y-2 group-hover/react:translate-y-0 z-30">
+                                  {EMOJI_OPTIONS.map(({ char }) => (
+                                    <button key={char} onClick={() => handleReaction(post.id, char, "post")} className="h-10 w-10 flex items-center justify-center text-xl rounded-xl hover:bg-primary/5 transition-colors">{char}</button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-60"><div className="flex items-center gap-1.5"><MessageSquare size={14}/> {post.comments.length}</div></div>
                           </div>
                           
                           {/* Comments Section */}
-                          <div className="p-5 bg-[color:var(--muted)]/10 flex flex-col gap-4">
+                          <div className="p-8 bg-black/5 flex flex-col gap-6">
                             {post.comments.length > 0 && (
-                              <div className="flex flex-col gap-4 mb-2">
+                              <div className="flex flex-col gap-5">
                                 {post.comments.map(comment => {
                                   const commentAvatar = comment.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author_name || "U")}&background=random`;
+                                  const isMyComment = comment.author_email === session.user.email;
                                   return (
-                                    <div key={comment.id} className="flex gap-3">
-                                      <img src={commentAvatar} className="h-8 w-8 rounded-full border border-[color:var(--border)] object-cover shrink-0" alt="" />
-                                      <div className="flex flex-col bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl rounded-tl-sm px-4 py-2 text-sm text-[color:var(--foreground)] shadow-sm">
-                                        <span className="font-semibold text-xs mb-0.5">{comment.author_name}</span>
-                                        <span>{comment.content}</span>
+                                    <div key={comment.id} className="flex gap-4 group/comment">
+                                      <img src={commentAvatar} className="h-10 w-10 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-2 ring-primary/5" alt="" />
+                                      <div className="flex flex-col gap-1 flex-1">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-3">
+                                            <span className="font-bold text-sm tracking-tight">{comment.author_name}</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-40">{formatDistanceToNow(parseISO(comment.created_at), { addSuffix: true })}</span>
+                                          </div>
+                                          {isMyComment && <button onClick={() => handleDeleteComment(post.id, comment.id)} className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-destructive/10 text-destructive opacity-0 group-hover/comment:opacity-100 transition-all"><Trash2 size={12}/></button>}
+                                        </div>
+                                        <div className="bg-[color:var(--card)] border border-[color:var(--border)] rounded-[1.5rem] rounded-tl-none px-5 py-3 text-base font-medium text-[color:var(--foreground)] opacity-90 shadow-sm">
+                                          {comment.content.split(/(@\w+\s\w+)/g).map((part, i) => part.startsWith("@") ? <span key={i} className="text-primary font-bold">{part}</span> : part)}
+                                        </div>
+                                        <div className="flex items-center gap-3 ml-2 mt-1">
+                                          <button onClick={() => handleReply(comment.author_name || "", post.id)} className="text-[10px] font-bold uppercase tracking-widest text-primary opacity-0 group-hover/comment:opacity-100 transition-opacity">Reply</button>
+                                          {/* Comment Reactions */}
+                                          <div className="flex gap-1.5">
+                                            {EMOJI_OPTIONS.slice(0,3).map(({char}) => {
+                                              const count = comment.reactions?.filter(r => r.emoji === char).length || 0;
+                                              const isReacted = comment.reactions?.some(r => r.emoji === char && r.author_email === session.user.email);
+                                              return (
+                                                <button key={char} onClick={() => handleReaction(comment.id, char, "comment")} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[10px] transition-all ${isReacted ? "bg-primary/10 border-primary/20 text-primary" : "bg-transparent border-transparent text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)]"} ${count === 0 && !isReacted ? "opacity-0 group-hover/comment:opacity-100" : "opacity-100"}`}>
+                                                  <span>{char}</span> {count > 0 && <span>{count}</span>}
+                                                </button>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
                                       </div>
                                     </div>
                                   )
                                 })}
                               </div>
                             )}
-                            
-                            {/* Add Comment */}
-                            <div className="flex gap-3 items-center">
-                              <img src={userAvatar} className="h-8 w-8 rounded-full border border-[color:var(--border)] object-cover shrink-0" alt="" />
-                              <form 
-                                onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement; handleCommentSubmit(post.id, input.value); input.value = ''; }} 
-                                className="flex-1 relative"
-                              >
-                                <input name="comment" type="text" placeholder="Write a comment..." className="w-full bg-[color:var(--card)] border border-[color:var(--border)] rounded-full px-4 py-2 text-sm outline-none focus:border-[color:var(--primary)] transition-colors" />
+                            <div className="flex gap-4 items-center relative">
+                              <img src={userAvatar} className="h-10 w-10 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-2 ring-primary/5" alt="" />
+                              <form onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement; handleCommentSubmit(post.id, input.value); input.value = ''; }} className="flex-1 relative flex items-center">
+                                <input id={`comment-input-${post.id}`} name="comment" type="text" placeholder="Add a comment... type @ to mention" className="w-full h-12 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl px-6 pr-12 text-sm font-semibold outline-none focus:border-primary/30 focus:ring-4 ring-primary/5 transition-all" onChange={(e) => { if(e.target.value.endsWith("@")) insertMention(post.id, ""); }} />
+                                <button type="submit" className="absolute right-3 h-8 w-8 flex items-center justify-center rounded-xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><Send size={16} /></button>
                               </form>
                             </div>
                           </div>
@@ -673,78 +761,42 @@ export default function Dashboard() {
 
             {/* PROFILE VIEW */}
             {!isLoading && activeTab === "profile" && profile && (
-              <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-8 max-w-4xl mx-auto">
-                <div className="card-elevated overflow-hidden relative">
-                  
-                  {/* Cover Photo */}
-                  <div className="h-48 md:h-64 w-full bg-[color:var(--muted)] relative group">
+              <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-12 max-w-4xl mx-auto">
+                <div className="card-elevated overflow-hidden relative rounded-[3rem] border-primary/5 shadow-2xl">
+                  <div className="h-64 md:h-80 w-full bg-[color:var(--muted)] relative group overflow-hidden">
                     {profile.cover_url ? (
-                      <img src={profile.cover_url} className="w-full h-full object-cover" alt="Cover" />
+                      <img src={profile.cover_url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Cover" />
                     ) : (
-                      <div className="w-full h-full bg-gradient-to-r from-blue-500/20 to-purple-500/20" />
+                      <div className="w-full h-full bg-gradient-to-tr from-primary/20 via-primary/5 to-transparent" />
                     )}
-                    
-                    <label className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md text-white p-2 rounded-full cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80">
-                      <Camera size={18} />
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "cover"); }} />
-                    </label>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                    <label className="absolute bottom-6 right-8 h-12 px-5 bg-black/60 backdrop-blur-xl border border-white/10 text-white rounded-2xl cursor-pointer opacity-0 group-hover:opacity-100 transition-all flex items-center gap-2.5 font-bold text-sm hover:bg-black/80"><Camera size={18} /> Change Cover <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "cover"); }} /></label>
                   </div>
-
-                  {/* Profile Info Area */}
-                  <div className="px-6 md:px-10 pb-8 relative">
-                    <div className="flex justify-between items-end mb-6">
-                      {/* Avatar */}
-                      <div className="relative -mt-16 group inline-block">
-                        <div className="h-32 w-32 rounded-full border-4 border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-lg relative">
+                  <div className="px-10 md:px-16 pb-12 relative">
+                    <div className="flex justify-between items-start">
+                      <div className="relative -mt-20 group inline-block">
+                        <div className="h-40 w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative ring-1 ring-primary/5">
                           <img src={userAvatar} className="w-full h-full object-cover" alt="Avatar" />
                         </div>
-                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-full cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Camera size={24} />
-                          <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "avatar"); }} />
-                        </label>
+                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-[2.5rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-all border-4 border-transparent group-hover:border-primary/20"><Camera size={32} /> <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "avatar"); }} /></label>
                       </div>
-                      
-                      <div className="pb-2">
-                         {isUpdatingProfile && <span className="text-sm text-[color:var(--primary)] flex items-center gap-2"><Loader2 size={14} className="animate-spin"/> Updating...</span>}
-                      </div>
+                      <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <div className="flex items-center gap-2.5 px-4 py-2 bg-primary/5 rounded-xl border border-primary/10 text-primary text-xs font-bold uppercase tracking-widest"><LoadingSpinner className="h-3 w-3" /> Syncing</div>}</div>
                     </div>
-
-                    <form onSubmit={(e) => handleProfileUpdate(e, (e.currentTarget.elements.namedItem('bio') as HTMLTextAreaElement).value, (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value)} className="flex flex-col gap-4">
-                      <div>
-                        <input name="name" defaultValue={profile.full_name} className="font-heading text-3xl font-bold bg-transparent outline-none border-b border-transparent focus:border-[color:var(--primary)] text-[color:var(--foreground)] w-full max-w-sm" />
-                        <p className="text-[color:var(--muted-foreground)]">{profile.user_email}</p>
-                      </div>
-                      
-                      <div className="mt-2">
-                        <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)] mb-1 block">Bio / Role</label>
-                        <textarea 
-                          name="bio"
-                          defaultValue={profile.bio || ""}
-                          placeholder="What do you do here?"
-                          className="w-full max-w-2xl resize-none bg-[color:var(--input)] border border-[color:var(--border)] rounded-lg p-3 text-sm focus:border-[color:var(--primary)] outline-none min-h-[80px]"
-                        />
-                      </div>
-                      <div className="flex justify-end">
-                        <button type="submit" disabled={isUpdatingProfile} className="button-secondary text-sm">Save Profile</button>
-                      </div>
+                    <form onSubmit={(e) => handleProfileUpdate(e, (e.currentTarget.elements.namedItem('bio') as HTMLTextAreaElement).value, (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value)} className="mt-8 flex flex-col gap-8">
+                      <div><input name="name" defaultValue={profile.full_name} className="font-heading text-5xl font-extrabold bg-transparent outline-none border-b-2 border-transparent focus:border-primary/30 text-[color:var(--foreground)] w-full transition-all tracking-tight" /> <div className="flex items-center gap-2 mt-2 font-bold text-sm text-primary opacity-80 uppercase tracking-[0.2em]">{session.user.email}</div></div>
+                      <div><label className="text-[10px] font-bold uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] mb-3 block opacity-60">Bio / Role</label><textarea name="bio" defaultValue={profile.bio || ""} placeholder="Describe your role..." className="w-full max-w-3xl resize-none bg-[color:var(--input)] border border-[color:var(--border)] rounded-[1.5rem] p-5 text-lg font-medium focus:border-primary/30 focus:ring-4 ring-primary/5 outline-none min-h-[120px] transition-all leading-relaxed shadow-inner" /></div>
+                      <div className="flex justify-end pt-4"><button type="submit" disabled={isUpdatingProfile} className="button-primary h-12 px-8 rounded-2xl font-bold text-base shadow-xl shadow-primary/20">Save Profile</button></div>
                     </form>
                   </div>
                 </div>
-
-                {/* Profile's Recent Execution Logs */}
-                <div>
-                  <h3 className="font-heading text-xl font-semibold mb-4">My Execution Logs</h3>
-                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                    {myReports.length === 0 ? <p className="text-[color:var(--muted-foreground)]">No logs yet.</p> : myReports.slice(0,4).map(report => (
-                       <button
-                        key={report.id}
-                        onClick={() => setSelectedReport(report)}
-                        className="card-elevated flex cursor-pointer flex-col p-5 text-left hover:border-[color:var(--primary)]/30"
-                      >
-                        <div className="mb-2 flex justify-between">
-                          <span className="text-xs font-semibold uppercase text-[color:var(--primary)]">{format(parseISO(report.report_date), "MMM d, yyyy")}</span>
-                        </div>
-                        <h3 className="line-clamp-2 font-heading text-lg font-semibold">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
+                <div className="px-4">
+                  <h3 className="font-heading text-2xl font-bold mb-8 tracking-tight flex items-center gap-3"><Activity size={24} className="text-primary"/> Recent Briefings</h3>
+                  <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                    {myReports.length === 0 ? <div className="col-span-full py-20 border border-dashed border-[color:var(--border)] rounded-[2rem] text-center text-[color:var(--muted-foreground)] font-medium">No reports recorded yet.</div> : myReports.slice(0,6).map(report => (
+                       <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated group flex cursor-pointer flex-col p-8 text-left hover:border-primary/30 rounded-[2rem] bg-gradient-to-br from-[color:var(--card)] to-transparent">
+                        <div className="mb-4 flex justify-between items-center"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-lg bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
+                        <h3 className="line-clamp-2 font-heading text-xl font-bold tracking-tight mb-2">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
+                        <p className="line-clamp-2 text-sm font-medium text-[color:var(--muted-foreground)] opacity-70">Review the details for this report.</p>
                       </button>
                     ))}
                   </div>
@@ -752,24 +804,23 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* CEO DASHBOARD (TEAM) */}
+            {/* DASHBOARD: TEAM */}
             {!isLoading && !isComposing && !selectedReport && activeTab === "dashboard" && (
-              // existing dashboard map...
-              <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-6 fade-in">
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-10">
+                <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {uniqueAuthors.map(author => {
                     const authorReports = reports.filter(r => r.author_name === author);
                     return (
-                      <button
-                        key={author}
-                        onClick={() => { setSelectedAuthor(author); setActiveTab("reports"); setReportsViewMode("list"); }}
-                        className="card-elevated flex cursor-pointer flex-col items-center justify-center p-8 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
-                      >
-                        <div className="mb-4 overflow-hidden rounded-full border-4 border-[color:var(--background)] shadow-sm">
-                          <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(author)}&background=random&size=128`} alt={author} className="h-20 w-20" />
+                      <button key={author} onClick={() => { setSelectedAuthor(author); setActiveTab("reports"); setReportsViewMode("list"); }} className="card-elevated flex cursor-pointer flex-col items-center justify-center p-10 text-center transition-all duration-500 hover:-translate-y-2 rounded-[2.5rem] border-primary/5 group relative overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="mb-6 relative">
+                          <div className="h-28 w-28 overflow-hidden rounded-[2rem] border-[4px] border-[color:var(--background)] shadow-xl relative z-10">
+                            <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(author)}&background=random&size=128&bold=true`} alt={author} className="h-full w-full object-cover" />
+                          </div>
+                          <div className="absolute -bottom-2 -right-2 h-10 w-10 bg-primary text-white rounded-xl flex items-center justify-center shadow-lg z-20 font-bold border-4 border-[color:var(--card)]">{authorReports.length}</div>
                         </div>
-                        <h4 className="font-heading text-lg font-semibold">{author}</h4>
-                        <p className="mt-1 text-sm font-medium text-[color:var(--muted-foreground)]">{authorReports.length} Updates</p>
+                        <h4 className="font-heading text-xl font-extrabold tracking-tight relative z-10">{author}</h4>
+                        <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)] opacity-60 relative z-10">Team Member</div>
                       </button>
                     );
                   })}
@@ -777,68 +828,47 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* REPORTS TIMELINE VIEW */}
+            {/* REPORTS VIEW */}
             {!isLoading && !isComposing && !selectedReport && activeTab === "reports" && (
-               <motion.div key="list" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-6 fade-in">
-                {selectedAuthor && (
-                  <div className="mb-2 flex items-center justify-between">
-                    <button onClick={() => setActiveTab("dashboard")} className="button-secondary text-sm"><ArrowLeft size={16} /> Back to Team</button>
+               <motion.div key="list" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-10">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div>
+                    {selectedAuthor && <button onClick={() => setActiveTab("dashboard")} className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary hover:translate-x-1 transition-transform"><ArrowLeft size={14} /> Back to Team</button>}
+                    <h3 className="font-heading text-3xl font-extrabold tracking-tight">{selectedAuthor ? `${selectedAuthor}'s Briefings` : isCEO ? "Team Briefings" : "My Daily Briefings"}</h3>
                   </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <h3 className="font-heading text-2xl font-semibold">{selectedAuthor ? `${selectedAuthor}'s Updates` : isCEO ? "All Briefings" : "My Briefings"}</h3>
-                  <div className="flex rounded-lg border border-[color:var(--border)] bg-[color:var(--input)] p-1">
-                    <button onClick={() => setReportsViewMode("list")} className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-smooth ${reportsViewMode === "list" ? "bg-[color:var(--card)] shadow-sm text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}><LayoutList size={14} /> List</button>
-                    <button onClick={() => setReportsViewMode("calendar")} className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-smooth ${reportsViewMode === "calendar" ? "bg-[color:var(--card)] shadow-sm text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}><CalendarDays size={14} /> Calendar</button>
+                  <div className="flex rounded-xl border border-[color:var(--border)] bg-[color:var(--input)] p-1.5 self-start">
+                    <button onClick={() => setReportsViewMode("list")} className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-xs font-bold uppercase tracking-widest transition-all ${reportsViewMode === "list" ? "bg-[color:var(--card)] shadow-lg text-primary" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}><LayoutList size={14} strokeWidth={3} /> List</button>
+                    <button onClick={() => setReportsViewMode("calendar")} className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-xs font-bold uppercase tracking-widest transition-all ${reportsViewMode === "calendar" ? "bg-[color:var(--card)] shadow-lg text-primary" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}><CalendarDays size={14} strokeWidth={3} /> Calendar</button>
                   </div>
                 </div>
-
                 {reportsViewMode === "list" ? (
-                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
                     {reportsToShow.map((report) => (
-                      <button
-                        key={report.id}
-                        onClick={() => setSelectedReport(report)}
-                        className="card-elevated flex cursor-pointer flex-col p-6 text-left hover:shadow-md hover:border-[color:var(--primary)]/30"
-                      >
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="text-xs font-semibold uppercase tracking-wider text-[color:var(--primary)]">{format(parseISO(report.report_date), "MMM d, yyyy")}</span>
-                          {report.image_url && <ImageIcon size={16} className="text-[color:var(--muted-foreground)]" />}
-                        </div>
-                        <h3 className="mb-3 line-clamp-2 font-heading text-lg font-semibold leading-tight">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
-                        {!selectedAuthor && isCEO && (
-                          <div className="mb-3 flex items-center gap-2 text-xs font-medium text-[color:var(--muted-foreground)]">
-                            <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(report.author_name)}&background=random&size=32`} alt="" className="h-5 w-5 rounded-full" />
-                            {report.author_name}
-                          </div>
-                        )}
-                        <p className="mt-auto line-clamp-3 text-sm text-[color:var(--muted-foreground)]">{JSON.parse(report.raw_text || "[]")[0]?.work_notes || report.raw_text}</p>
+                      <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated flex cursor-pointer flex-col p-8 text-left hover:shadow-2xl hover:border-primary/20 rounded-[2rem] transition-all duration-500 bg-gradient-to-br from-[color:var(--card)] to-transparent group">
+                        <div className="mb-5 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1.5 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-xl bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
+                        <h3 className="mb-4 line-clamp-2 font-heading text-xl font-bold tracking-tight leading-tight group-hover:text-primary transition-colors">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
+                        {!selectedAuthor && isCEO && <div className="mb-5 flex items-center gap-3"><img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(report.author_name)}&background=random&size=32&bold=true`} alt="" className="h-6 w-6 rounded-lg shadow-sm" /><span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">{report.author_name}</span></div>}
+                        <p className="mt-auto line-clamp-3 text-sm font-medium text-[color:var(--muted-foreground)] opacity-70 leading-relaxed italic border-l-2 border-[color:var(--border)] pl-4">"{JSON.parse(report.raw_text || "[]")[0]?.work_notes || report.raw_text}"</p>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  // Calendar View (abbreviated for brevity here, assumed functioning identically to before just mapped over reportsToShow)
-                  <div className="card-elevated p-6 md:p-8">
-                     <div className="mb-8 flex items-center justify-between">
-                      <h2 className="font-heading text-2xl font-semibold text-[color:var(--foreground)]">{format(visibleMonth, "MMMM yyyy")}</h2>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleMonthChange("previous")} className="flex h-10 w-10 items-center justify-center rounded-full text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)] transition-colors"><ChevronLeft size={20} /></button>
-                        <button onClick={() => handleMonthChange("next")} className="flex h-10 w-10 items-center justify-center rounded-full text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)] transition-colors"><ChevronRight size={20} /></button>
-                      </div>
-                    </div>
-                    {/* Grid rendering skipped in this block replacement for length, but preserved logically */}
-                     <div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">
-                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => <div key={dayName} className="py-2">{dayName}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7 gap-2 md:gap-3">
+                  <div className="card-elevated p-10 rounded-[3rem] border-primary/5 shadow-2xl shadow-black/5">
+                     <div className="mb-10 flex items-center justify-between"><h2 className="font-heading text-3xl font-extrabold tracking-tight text-[color:var(--foreground)]">{format(visibleMonth, "MMMM yyyy")}</h2> <div className="flex gap-3"><button onClick={() => handleMonthChange("previous")} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--muted)]/50 text-[color:var(--muted-foreground)] hover:bg-primary/10 hover:text-primary transition-all shadow-sm"><ChevronLeft size={24} /></button> <button onClick={() => handleMonthChange("next")} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--muted)]/50 text-[color:var(--muted-foreground)] hover:bg-primary/10 hover:text-primary transition-all shadow-sm"><ChevronRight size={24} /></button></div></div>
+                     <div className="mb-4 grid grid-cols-7 gap-2 text-center text-[10px] font-black uppercase tracking-[0.3em] text-primary opacity-40">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => <div key={dayName} className="py-2">{dayName}</div>)}</div>
+                    <div className="grid grid-cols-7 gap-4">
                       {eachDayOfInterval({ start: startOfWeek(startOfMonth(visibleMonth), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(visibleMonth), { weekStartsOn: 1 }) }).map((day) => {
                         const dayReports = reportsToShow.filter((r) => isSameDay(parseISO(r.report_date), day));
+                        const current = isSameMonth(day, visibleMonth);
+                        const isToday = isSameDay(day, new Date());
                         return (
-                           <div key={day.toISOString()} className={`flex min-h-[100px] flex-col p-2 rounded-xl border ${!isSameMonth(day, visibleMonth) ? "opacity-30 border-transparent" : dayReports.length > 0 ? "border-[color:var(--border)] bg-[color:var(--muted)]/30" : "border-[color:var(--border)]"}`}>
-                             <span className={`text-sm font-semibold ${dayReports.length > 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>{format(day, "d")}</span>
-                             {dayReports.map((r, idx) => (
-                               <button key={idx} onClick={() => setSelectedReport(r)} className="mt-1 w-full truncate rounded bg-[color:var(--card)] px-1.5 py-0.5 text-left text-[10px] font-medium shadow-sm hover:ring-1 hover:ring-[color:var(--primary)]">{selectedAuthor ? r.formatted_report.substring(0,10) : r.author_name}</button>
-                             ))}
+                           <div key={day.toISOString()} className={`flex min-h-[120px] flex-col p-4 rounded-[1.5rem] border-2 transition-all duration-500 ${!current ? "opacity-10 border-transparent" : isToday ? "border-primary/20 bg-primary/5" : "border-[color:var(--border)] bg-black/5"} ${dayReports.length > 0 ? "hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-1" : ""}`}>
+                             <span className={`text-sm font-black tracking-tighter ${dayReports.length > 0 ? "text-primary" : "text-[color:var(--muted-foreground)] opacity-40"} ${isToday ? "scale-125 origin-left" : ""}`}>{format(day, "d")}</span>
+                             <div className="mt-3 flex flex-col gap-2">
+                               {dayReports.map((r, idx) => (
+                                 <button key={idx} onClick={() => setSelectedReport(r)} className="w-full truncate rounded-xl bg-[color:var(--card)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--foreground)] shadow-sm hover:ring-2 ring-primary/30 transition-all border border-[color:var(--border)]">{selectedAuthor ? r.formatted_report.substring(0,12) : r.author_name}</button>
+                               ))}
+                             </div>
                            </div>
                         )
                       })}
@@ -848,81 +878,46 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* COMPOSE VIEW */}
+            {/* COMPOSE REPORT */}
              {!isLoading && isComposing && (
-               // Kept exact compose view code from previous working version
-               <motion.div key="compose" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="card-elevated mx-auto max-w-3xl p-8">
-                <div className="mb-8 flex items-center justify-between border-b border-[color:var(--border)] pb-6">
-                  <h3 className="font-heading text-2xl font-semibold">Log Execution Details</h3>
-                  <button onClick={() => setIsComposing(false)} className="text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)]"><X size={20} /></button>
-                </div>
-                <form onSubmit={handleReportSubmit} className="flex flex-col gap-8">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium">Report Date</label>
-                    <input required type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="input-field max-w-xs" />
-                  </div>
-                  <div className="flex flex-col gap-6">
-                    <h4 className="font-heading text-lg font-semibold border-b border-[color:var(--border)] pb-2">Project Updates</h4>
+               <motion.div key="compose" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="card-elevated mx-auto max-w-4xl p-12 rounded-[3rem] border-primary/10 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-8"><button onClick={() => setIsComposing(false)} className="h-12 w-12 flex items-center justify-center rounded-2xl bg-[color:var(--muted)] text-[color:var(--muted-foreground)] hover:text-destructive transition-colors"><X size={24} /></button></div>
+                <header className="mb-12"><div className="h-1 w-20 bg-primary mb-6 rounded-full" /><h3 className="font-heading text-4xl font-black tracking-tight text-[color:var(--foreground)]">Log Briefing</h3><p className="text-[color:var(--muted-foreground)] font-medium mt-2">Update your daily accomplishments across different projects.</p></header>
+                <form onSubmit={handleReportSubmit} className="flex flex-col gap-12">
+                  <div className="flex flex-col gap-3"><label className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Report Date</label><input required type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="input-field max-w-xs h-14 text-lg font-bold rounded-2xl" /></div>
+                  <div className="flex flex-col gap-8">
+                    <div className="flex items-center justify-between border-b border-[color:var(--border)] pb-4"><h4 className="font-heading text-xl font-bold tracking-tight">Project Updates</h4><span className="text-[10px] font-black uppercase tracking-[0.2em] text-[color:var(--muted-foreground)] opacity-50">{updates.length} Projects</span></div>
                     {updates.map((update, idx) => (
-                      <div key={update.id} className="relative rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] p-6 shadow-sm">
-                        {updates.length > 1 && (
-                          <button type="button" onClick={() => setUpdates(prev => prev.filter(u => u.id !== update.id))} className="absolute right-4 top-4 text-[color:var(--muted-foreground)] hover:text-[color:var(--destructive)]"><X size={16} /></button>
-                        )}
-                        <div className="mb-4">
-                          <label className="mb-2 block text-sm font-medium">Project Name / Client</label>
-                          <input required type="text" value={update.projectName} onChange={(e) => { const newU = [...updates]; newU[idx].projectName = e.target.value; setUpdates(newU); }} className="input-field" />
-                        </div>
-                        <div className="mb-4">
-                          <label className="mb-2 block text-sm font-medium">Work Notes</label>
-                          <textarea required minLength={5} value={update.workNotes} onChange={(e) => { const newU = [...updates]; newU[idx].workNotes = e.target.value; setUpdates(newU); }} className="input-field min-h-[100px] resize-y" />
-                        </div>
-                        <div>
-                          <label className="mb-2 block text-sm font-medium">Proof of Work (Optional Image)</label>
-                          <label className="input-field flex cursor-pointer items-center justify-between hover:bg-[color:var(--muted)]">
-                            <span className="truncate">{update.selectedImage ? update.selectedImage.name : "Attach screenshot..."}</span>
-                            <ImageIcon size={18} className="text-[color:var(--muted-foreground)]" />
-                            <input type="file" accept="image/*" onChange={(e) => { const newU = [...updates]; newU[idx].selectedImage = e.target.files?.[0] ?? null; setUpdates(newU); }} className="hidden" />
-                          </label>
-                        </div>
+                      <div key={update.id} className="relative rounded-[2rem] border border-primary/10 bg-primary/5 p-10 shadow-inner">
+                        {updates.length > 1 && <button type="button" onClick={() => setUpdates(prev => prev.filter(u => u.id !== update.id))} className="absolute right-6 top-6 h-8 w-8 flex items-center justify-center rounded-xl bg-white/10 text-white hover:bg-destructive/20 hover:text-destructive transition-all"><X size={16} /></button>}
+                        <div className="mb-8"><label className="mb-3 block text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Project Name / Client</label><input required type="text" value={update.projectName} onChange={(e) => { const newU = [...updates]; newU[idx].projectName = e.target.value; setUpdates(newU); }} placeholder="e.g. Acme Corp Migration" className="input-field h-14 text-lg font-bold rounded-2xl bg-white/5 border-white/10" /></div>
+                        <div className="mb-8"><label className="mb-3 block text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Work Notes</label><textarea required minLength={5} value={update.workNotes} onChange={(e) => { const newU = [...updates]; newU[idx].workNotes = e.target.value; setUpdates(newU); }} placeholder="Detail your progress..." className="input-field min-h-[140px] resize-none text-base font-medium rounded-2xl bg-white/5 border-white/10 leading-relaxed" /></div>
+                        <div><label className="mb-3 block text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Proof of Work (Optional)</label><label className="input-field h-14 flex cursor-pointer items-center justify-between bg-white/5 border-white/10 border-dashed hover:bg-white/10 transition-all rounded-2xl px-6"><span className="text-sm font-bold opacity-60 truncate">{update.selectedImage ? update.selectedImage.name : "Attach Screenshot..."}</span> <Camera size={20} className="text-primary/60" /><input type="file" accept="image/*" onChange={(e) => { const newU = [...updates]; newU[idx].selectedImage = e.target.files?.[0] ?? null; setUpdates(newU); }} className="hidden" /></label></div>
                       </div>
                     ))}
-                    <button type="button" onClick={() => setUpdates(prev => [...prev, { id: Math.random().toString(), projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }])} className="flex items-center gap-2 text-sm font-medium text-[color:var(--primary)] self-start"><Plus size={16} /> Add Another Project</button>
+                    <button type="button" onClick={() => setUpdates(prev => [...prev, { id: Math.random().toString(), projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }])} className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.2em] text-primary hover:scale-105 transition-transform self-start bg-primary/5 px-6 py-3 rounded-2xl border border-primary/10 shadow-lg shadow-primary/5"><Plus size={16} strokeWidth={3} /> Add Another Project</button>
                   </div>
-                  <div className="mt-4 flex justify-end gap-3 border-t border-[color:var(--border)] pt-6">
-                    <button type="button" onClick={() => setIsComposing(false)} className="button-secondary">Cancel</button>
-                    <button type="submit" disabled={isSubmitting || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary">
-                      {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : "Submit Briefing"}
-                    </button>
-                  </div>
+                  <div className="mt-8 flex justify-end gap-4 border-t border-[color:var(--border)] pt-10"><button type="button" onClick={() => setIsComposing(false)} className="h-14 px-8 rounded-2xl font-bold uppercase tracking-widest text-xs opacity-60 hover:opacity-100 transition-opacity">Cancel</button> <button type="submit" disabled={isSubmitting || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary h-14 px-10 rounded-2xl font-black uppercase tracking-[0.2em] text-sm shadow-2xl shadow-primary/30">{isSubmitting ? <LoadingSpinner className="h-5 w-5 border-t-white border-white/20" /> : "Submit Briefing"}</button></div>
                 </form>
               </motion.div>
              )}
 
             {/* REPORT DETAIL VIEW */}
             {!isLoading && selectedReport && !isComposing && (
-              <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-4xl flex-col gap-6">
-                <button onClick={() => setSelectedReport(null)} className="button-secondary w-fit"><ArrowLeft size={16} /> Back</button>
-                <div className="card-elevated p-8 md:p-12">
-                  <div className="mb-10 border-b border-[color:var(--border)] pb-8">
-                    <h1 className="font-heading text-3xl font-bold tracking-tight md:text-4xl">Executive Briefing</h1>
-                    <span className="text-sm uppercase tracking-wider text-[color:var(--primary)]">{format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}</span>
-                  </div>
-                  <div className="mb-12"><CleanReport text={selectedReport.formatted_report} /></div>
-                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/50 p-6">
-                    <h4 className="mb-4 flex items-center gap-2 font-heading text-sm font-semibold border-b border-[color:var(--border)] pb-3"><FileText size={16} /> Raw Notes</h4>
-                    <div className="space-y-6">
-                      {(() => {
-                        try {
-                          const parsed = JSON.parse(selectedReport.raw_text);
-                          return parsed.map((p: any, i: number) => (
-                            <div key={i} className="flex flex-col gap-2">
-                              <span className="text-sm font-semibold">{p.project_name}</span>
-                              <span className="whitespace-pre-wrap text-sm text-[color:var(--muted-foreground)]">{p.work_notes}</span>
-                            </div>
-                          ));
-                        } catch { return <span className="whitespace-pre-wrap text-sm text-[color:var(--muted-foreground)]">{selectedReport.raw_text}</span>; }
-                      })()}
+              <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-4xl flex-col gap-10">
+                <div className="card-elevated p-12 md:p-16 rounded-[3.5rem] border-primary/5 shadow-2xl bg-gradient-to-br from-[color:var(--card)] to-transparent">
+                  <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
+                    <div>
+                      <div className="flex items-center gap-3 mb-6"><img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(selectedReport.author_name)}&background=random&size=48&bold=true`} alt="" className="h-10 w-10 rounded-2xl shadow-lg shadow-primary/10 ring-2 ring-primary/5" /> <div><div className="font-black text-sm tracking-tight">{selectedReport.author_name}</div> <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div></div></div>
+                      <h1 className="font-heading text-5xl font-black tracking-tighter leading-none mb-4">Daily Briefing</h1>
+                      <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] opacity-60"><Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}</div>
                     </div>
+                    <div className="flex h-16 w-16 items-center justify-center group-hover:scale-110 transition-transform duration-500 p-2"><img src="/logo.png" alt="Logo" className="h-full w-full object-contain" /></div>
+                  </div>
+                  <div className="mb-16"><CleanReport text={selectedReport.formatted_report} /></div>
+                  <div className="rounded-[2.5rem] border-2 border-primary/5 bg-primary/5 p-10 shadow-inner">
+                    <h4 className="mb-8 flex items-center gap-3 font-heading text-sm font-black uppercase tracking-[0.3em] text-primary/60"><FileText size={18} /> Raw Work Notes</h4>
+                    <div className="space-y-10">{(() => { try { const parsed = JSON.parse(selectedReport.raw_text); return parsed.map((p: any, i: number) => ( <div key={i} className="flex flex-col gap-3 relative pl-6 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary/10 before:rounded-full"><span className="text-xs font-black uppercase tracking-[0.2em] text-primary">{p.project_name}</span> <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed">{p.work_notes}</span></div> )); } catch { return <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed italic">"{selectedReport.raw_text}"</span>; } })()}</div>
                   </div>
                 </div>
               </motion.div>
@@ -930,17 +925,15 @@ export default function Dashboard() {
 
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (
-               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl p-8">
-                <h3 className="mb-6 font-heading text-2xl font-semibold">System Configuration</h3>
-                <div className="space-y-6">
-                  <div className="rounded-lg border border-[color:var(--border)] p-4">
-                    <h4 className="font-medium">Account</h4>
-                    <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">Logged in as {session.user.email}</p>
-                  </div>
+               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl p-12 rounded-[2.5rem] border-primary/5">
+                <h3 className="mb-10 font-heading text-3xl font-black tracking-tight text-primary">System Configuration</h3>
+                <div className="space-y-8">
+                  <div className="rounded-2xl border border-[color:var(--border)] p-6 bg-black/5"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">User Identity</h4> <div className="flex items-center gap-4"><img src={userAvatar} className="h-12 w-12 rounded-2xl border border-primary/10" alt="" /> <div><div className="font-bold text-lg">{profile?.full_name}</div> <div className="text-xs font-medium text-[color:var(--muted-foreground)]">{session.user.email}</div></div></div></div>
+                  <div className="rounded-2xl border border-[color:var(--border)] p-6 bg-black/5"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">API Link</h4> <p className="font-mono text-xs text-[color:var(--muted-foreground)] tracking-tight overflow-x-auto whitespace-nowrap">{API_BASE_URL}</p></div>
+                  <div className="pt-4"><button onClick={() => supabase.auth.signOut()} className="flex items-center gap-3 px-6 h-12 rounded-xl bg-destructive/5 text-destructive font-black uppercase tracking-[0.2em] text-[10px] border border-destructive/10 hover:bg-destructive hover:text-white transition-all w-fit">Sign Out</button></div>
                 </div>
               </motion.div>
             )}
-
           </AnimatePresence>
         </div>
       </main>

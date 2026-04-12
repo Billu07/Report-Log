@@ -87,9 +87,11 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     try:
         user_response = supabase.auth.get_user(token)
         if not user_response.user:
+            logger.error("Auth failed: No user in response for token. Response: %s", user_response)
             raise HTTPException(status_code=401, detail="Invalid or expired token.")
         return user_response.user
     except Exception as e:
+        logger.error("Auth exception: %s", e)
         raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
 
 
@@ -154,6 +156,7 @@ class CommentRecord(BaseModel):
     # Joined profile data
     author_name: Optional[str] = None
     author_avatar: Optional[str] = None
+    reactions: Optional[list[ReactionRecord]] = []
 
 class PostRecord(BaseModel):
     id: Optional[str] = None
@@ -348,7 +351,11 @@ async def submit_report(
     Accepts a structured JSON payload of project updates, generates a polished report,
     and persists it to the `daily_reports` table in Supabase.
     """
-    author_name = user.user_metadata.get("full_name") or user.email
+    email = user.email
+    full_name = user.user_metadata.get("full_name", email)
+    profile = await get_or_create_profile(email, full_name)
+    author_name = profile.get("full_name", email)
+    
     updates_dicts = [u.model_dump() for u in request.updates]
 
     try:
@@ -502,6 +509,8 @@ async def get_feed(user: Any = Depends(get_current_user)) -> list[PostRecord]:
             if c_author:
                 c["author_name"] = c_author["full_name"]
                 c["author_avatar"] = c_author["avatar_url"]
+            # Add comment reactions
+            c["reactions"] = [r for r in reactions if r.get("comment_id") == c["id"]]
         record.comments = [CommentRecord(**c) for c in post_comments]
         
         # Add reactions
@@ -559,13 +568,12 @@ async def create_comment(
 
 
 @app.post("/posts/{post_id}/reactions", response_model=ReactionRecord)
-async def toggle_reaction(
+async def toggle_post_reaction(
     post_id: str,
     req: CreateReactionRequest,
     user: Any = Depends(get_current_user)
 ) -> ReactionRecord:
     email = user.email
-    
     # Check if exists
     existing = await run_in_threadpool(
         supabase.table("reactions")
@@ -575,21 +583,53 @@ async def toggle_reaction(
         .eq("emoji", req.emoji)
         .execute
     )
-    
     if existing.data:
-        # Delete it (toggle off)
-        await run_in_threadpool(
-            supabase.table("reactions").delete().eq("id", existing.data[0]["id"]).execute
-        )
-        return ReactionRecord(**existing.data[0]) # returning the removed one is fine for UI to know it's gone
-    else:
-        # Insert it
-        payload = {
-            "post_id": post_id,
-            "author_email": email,
-            "emoji": req.emoji
-        }
-        insert_resp = await run_in_threadpool(
-            supabase.table("reactions").insert(payload).execute
-        )
-        return ReactionRecord(**insert_resp.data[0])
+        await run_in_threadpool(supabase.table("reactions").delete().eq("id", existing.data[0]["id"]).execute)
+        return ReactionRecord(**existing.data[0])
+    payload = {"post_id": post_id, "author_email": email, "emoji": req.emoji}
+    insert_resp = await run_in_threadpool(supabase.table("reactions").insert(payload).execute)
+    return ReactionRecord(**insert_resp.data[0])
+
+@app.post("/comments/{comment_id}/reactions", response_model=ReactionRecord)
+async def toggle_comment_reaction(
+    comment_id: str,
+    req: CreateReactionRequest,
+    user: Any = Depends(get_current_user)
+) -> ReactionRecord:
+    email = user.email
+    existing = await run_in_threadpool(
+        supabase.table("reactions")
+        .select("*")
+        .eq("comment_id", comment_id)
+        .eq("author_email", email)
+        .eq("emoji", req.emoji)
+        .execute
+    )
+    if existing.data:
+        await run_in_threadpool(supabase.table("reactions").delete().eq("id", existing.data[0]["id"]).execute)
+        return ReactionRecord(**existing.data[0])
+    payload = {"comment_id": comment_id, "author_email": email, "emoji": req.emoji}
+    insert_resp = await run_in_threadpool(supabase.table("reactions").insert(payload).execute)
+    return ReactionRecord(**insert_resp.data[0])
+
+@app.delete("/posts/{post_id}")
+async def delete_post(post_id: str, user: Any = Depends(get_current_user)):
+    # Verify ownership
+    existing = await run_in_threadpool(supabase.table("posts").select("author_email").eq("id", post_id).execute)
+    if not existing.data or existing.data[0]["author_email"] != user.email:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this post")
+    await run_in_threadpool(supabase.table("posts").delete().eq("id", post_id).execute)
+    return {"status": "ok"}
+
+@app.delete("/comments/{comment_id}")
+async def delete_comment(comment_id: str, user: Any = Depends(get_current_user)):
+    existing = await run_in_threadpool(supabase.table("comments").select("author_email").eq("id", comment_id).execute)
+    if not existing.data or existing.data[0]["author_email"] != user.email:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this comment")
+    await run_in_threadpool(supabase.table("comments").delete().eq("id", comment_id).execute)
+    return {"status": "ok"}
+
+@app.get("/profiles/all", response_model=list[ProfileRecord])
+async def get_all_profiles(user: Any = Depends(get_current_user)) -> list[ProfileRecord]:
+    response = await run_in_threadpool(supabase.table("profiles").select("*").execute())
+    return [ProfileRecord(**p) for p in response.data or []]
