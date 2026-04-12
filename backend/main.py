@@ -176,20 +176,21 @@ app.add_middleware(
 
 def build_prompt(updates: list[dict[str, Any]]) -> str:
     prompt = (
-        "You are an elite executive assistant preparing a polished daily progress report.\n"
-        "Transform the provided structured project updates into a concise, professional, unified report with this structure:\n"
-        "1. Executive Summary (A one-sentence impact statement of the day's achievements)\n"
+        "You are an elite executive assistant preparing a polished daily progress report for an individual contributor.\n"
+        "Transform the provided project updates into a concise, professional report that reflects the individual's personal execution.\n"
+        "1. Executive Summary (A one-sentence impact statement of YOUR achievements today)\n"
         "2. Project Execution (Grouped by project name)\n"
-        "   - Status: Clear status update based on notes\n"
-        "   - Key Achievements: Bullet points of work completed\n"
-        "   - Next Steps: Bullet points of upcoming actions (Only use the provided next steps)\n"
-        "   - Blockers: Any impediments noted (Only use the provided blockers)\n\n"
+        "   - Status: Current individual progress\n"
+        "   - Key Achievements: Bullet points of work YOU completed\n"
+        "   - Next Steps: Your planned actions (Only if provided)\n"
+        "   - Blockers: Your impediments (Only if provided)\n\n"
         "Guidelines:\n"
-        "- Tone: Technical, precise, and executive-friendly. Avoid fluff.\n"
-        "- Standard: Use industry-standard professional terminology.\n"
+        "- Perspective: Use the first person ('I', 'My', 'Me') exclusively. DO NOT use 'the team', 'we', or 'our'.\n"
+        "- Tone: Technical, precise, and authoritative. Avoid fluff.\n"
+        "- Standard: Industry-standard professional terminology.\n"
         "- Constraint: DO NOT invent milestones or next steps. If next steps/blockers are empty, do not create them.\n"
         "- CRITICAL: If an `Attached Image URL` is provided, embed it using `![Proof of Work](<the_url>)` at the end of that project's section.\n\n"
-        "Here are the engineer's raw updates:\n"
+        "Here are your raw updates:\n"
     )
     for update in updates:
         prompt += f"\nProject: {update['project_name']}\n"
