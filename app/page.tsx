@@ -215,7 +215,6 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
         <div className="mb-10 text-center flex flex-col items-center">
           <img src="/logo.png" alt="Company Logo" className="h-16 w-16 object-contain mb-6" />
           <h1 className="font-heading text-3xl font-extrabold tracking-tight text-primary">Autolinium</h1>
-          <p className="mt-2 text-sm text-[color:var(--muted-foreground)] font-medium">Enterprise Execution Log</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
@@ -224,7 +223,7 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
               <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Full Name</label>
               <div className="relative">
                 <UserIcon size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
-                <input required type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="input-field pl-11" placeholder="John Doe" />
+                <input required type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="input-field pl-11" placeholder="Sheikh Hasina" />
               </div>
             </div>
           )}
