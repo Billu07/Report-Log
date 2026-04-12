@@ -1040,20 +1040,28 @@ export default function Dashboard() {
                     ))}
                   </div>
                 ) : (
-                  <div className="card-elevated p-10 rounded-[3rem] border-primary/5 shadow-2xl shadow-black/5">
-                     <div className="mb-10 flex items-center justify-between"><h2 className="font-heading text-3xl font-extrabold tracking-tight text-[color:var(--foreground)]">{format(visibleMonth, "MMMM yyyy")}</h2> <div className="flex gap-3"><button onClick={() => handleMonthChange("previous")} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--muted)]/50 text-[color:var(--muted-foreground)] hover:bg-primary/10 hover:text-primary transition-all shadow-sm"><ChevronLeft size={24} /></button> <button onClick={() => handleMonthChange("next")} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--muted)]/50 text-[color:var(--muted-foreground)] hover:bg-primary/10 hover:text-primary transition-all shadow-sm"><ChevronRight size={24} /></button></div></div>
-                     <div className="mb-4 grid grid-cols-7 gap-2 text-center text-[10px] font-black uppercase tracking-[0.3em] text-primary opacity-40">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => <div key={dayName} className="py-2">{dayName}</div>)}</div>
-                    <div className="grid grid-cols-7 gap-4">
+                  <div className="card-elevated p-8 rounded-[2.5rem] border-primary/5 bg-[color:var(--card)]/80 backdrop-blur-xl shadow-xl max-w-5xl mx-auto">
+                     <div className="mb-8 flex items-center justify-between">
+                       <h2 className="font-heading text-2xl font-bold tracking-tight">{format(visibleMonth, "MMMM yyyy")}</h2> 
+                       <div className="flex gap-2">
+                         <button onClick={() => handleMonthChange("previous")} className="h-10 w-10 flex items-center justify-center rounded-xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><ChevronLeft size={20} /></button> 
+                         <button onClick={() => handleMonthChange("next")} className="h-10 w-10 flex items-center justify-center rounded-xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><ChevronRight size={20} /></button>
+                       </div>
+                     </div>
+                     <div className="mb-2 grid grid-cols-7 gap-2 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-50">
+                       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => <div key={dayName} className="py-2">{dayName}</div>)}
+                     </div>
+                    <div className="grid grid-cols-7 gap-2">
                       {eachDayOfInterval({ start: startOfWeek(startOfMonth(visibleMonth), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(visibleMonth), { weekStartsOn: 1 }) }).map((day) => {
                         const dayReports = reportsToShow.filter((r) => isSameDay(parseISO(r.report_date), day));
                         const current = isSameMonth(day, visibleMonth);
                         const isToday = isSameDay(day, new Date());
                         return (
-                           <div key={day.toISOString()} className={`flex min-h-[120px] flex-col p-4 rounded-[1.5rem] border-2 transition-all duration-500 ${!current ? "opacity-10 border-transparent" : isToday ? "border-primary/20 bg-primary/5" : "border-[color:var(--border)] bg-black/5"} ${dayReports.length > 0 ? "hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-1" : ""}`}>
-                             <span className={`text-sm font-black tracking-tighter ${dayReports.length > 0 ? "text-primary" : "text-[color:var(--muted-foreground)] opacity-40"} ${isToday ? "scale-125 origin-left" : ""}`}>{format(day, "d")}</span>
-                             <div className="mt-3 flex flex-col gap-2">
+                           <div key={day.toISOString()} className={`flex min-h-[90px] flex-col p-3 rounded-2xl border transition-all duration-300 ${!current ? "opacity-10 border-transparent" : isToday ? "border-primary/30 bg-primary/5" : "border-[color:var(--border)] bg-black/5"} ${dayReports.length > 0 ? "hover:border-primary/40 hover:bg-primary/5 shadow-sm" : ""}`}>
+                             <span className={`text-xs font-bold tracking-tight ${dayReports.length > 0 ? "text-primary" : "text-[color:var(--muted-foreground)] opacity-50"}`}>{format(day, "d")}</span>
+                             <div className="mt-2 flex flex-col gap-1.5">
                                {dayReports.map((r, idx) => (
-                                 <button key={idx} onClick={() => setSelectedReport(r)} className="w-full truncate rounded-xl bg-[color:var(--card)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--foreground)] shadow-sm hover:ring-2 ring-primary/30 transition-all border border-[color:var(--border)]">{selectedAuthor ? r.formatted_report.substring(0,12) : r.author_name}</button>
+                                 <button key={idx} onClick={() => setSelectedReport(r)} className="w-full truncate rounded-lg bg-[color:var(--card)] px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[color:var(--foreground)] shadow-sm hover:ring-2 ring-primary/30 transition-all border border-[color:var(--border)]">{selectedAuthor ? r.formatted_report.substring(0,8) : r.author_name}</button>
                                ))}
                              </div>
                            </div>
