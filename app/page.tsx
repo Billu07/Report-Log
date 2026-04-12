@@ -191,8 +191,15 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
           email, password, options: { data: { full_name: fullName } }
         });
         if (signUpError) throw signUpError;
-        if (data.session) onAuthSuccess(data.session);
-        else setError("Please check your email to verify your account.");
+        
+        // If auto-confirm is enabled in Supabase, we might get a session immediately
+        if (data.session) {
+          onAuthSuccess(data.session);
+        } else {
+          // If confirm is still required, show a friendly message but allow them to try logging in
+          setError("Account created! You can now sign in.");
+          setIsSignUp(false);
+        }
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
