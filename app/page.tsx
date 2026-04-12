@@ -950,22 +950,22 @@ export default function Dashboard() {
             {!isLoading && activeTab === "profile" && profile && (
               <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-12 max-w-4xl mx-auto">
                 <div className="card-elevated overflow-hidden relative rounded-[3rem] border-primary/5 shadow-2xl">
-                  <div className="h-64 md:h-80 w-full bg-[color:var(--muted)] relative group overflow-hidden">
+                  <div className="aspect-[3.5/1] w-full bg-[color:var(--muted)] relative group overflow-hidden border-b border-[color:var(--border)]">
                     {profile.cover_url ? (
-                      <img src={profile.cover_url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Cover" />
+                      <img src={profile.cover_url} className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105" alt="Cover" />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-tr from-primary/20 via-primary/5 to-transparent" />
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                    <label className="absolute bottom-6 right-8 h-12 px-5 bg-black/60 backdrop-blur-xl border border-white/10 text-white rounded-2xl cursor-pointer opacity-0 group-hover:opacity-100 transition-all flex items-center gap-2.5 font-bold text-sm hover:bg-black/80"><Camera size={18} /> Change Cover <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "cover"); }} /></label>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                    <label className="absolute bottom-6 right-8 h-10 px-4 bg-black/60 backdrop-blur-xl border border-white/10 text-white rounded-xl cursor-pointer opacity-0 group-hover:opacity-100 transition-all flex items-center gap-2.5 font-bold text-xs hover:bg-black/80"><Camera size={16} /> Update Cover <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "cover"); }} /></label>
                   </div>
                   <div className="px-10 md:px-16 pb-12 relative">
                     <div className="flex justify-between items-start">
-                      <div className="relative -mt-20 group inline-block">
-                        <div className="h-40 w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative ring-1 ring-primary/5">
+                      <div className="relative -mt-16 md:-mt-20 group inline-block">
+                        <div className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative ring-1 ring-primary/5">
                           <img src={userAvatar} className="w-full h-full object-cover" alt="Avatar" />
                         </div>
-                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-[2.5rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-all border-4 border-transparent group-hover:border-primary/20"><Camera size={32} /> <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "avatar"); }} /></label>
+                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-[2.5rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-all border-4 border-transparent group-hover:border-primary/20"><Camera size={28} /> <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "avatar"); }} /></label>
                       </div>
                       <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <div className="flex items-center gap-2.5 px-4 py-2 bg-primary/5 rounded-xl border border-primary/10 text-primary text-xs font-bold uppercase tracking-widest"><LoadingSpinner className="h-3 w-3" /> Syncing</div>}</div>
                     </div>
