@@ -158,9 +158,9 @@ function CleanReport({ text }: { text: string }) {
         const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
         if (imageMatch) {
           return (
-            <div key={i} className="my-8 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)] shadow-md group/img relative">
-              <div className="aspect-video w-full overflow-hidden">
-                <img src={imageMatch[1]} alt="Attached visual" className="h-full w-full object-cover transition-transform duration-700 group-hover/img:scale-105" />
+            <div key={i} className="my-8 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/5 shadow-md group/img relative">
+              <div className="flex items-center justify-center w-full h-[400px] md:h-[500px] bg-[color:var(--muted)]/30">
+                <img src={imageMatch[1]} alt="Attached visual" className="max-h-full max-w-full object-contain transition-transform duration-700 group-hover/img:scale-[1.01]" />
               </div>
               <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-white/10 opacity-0 group-hover/img:opacity-100 transition-opacity">Visual Proof</div>
             </div>
