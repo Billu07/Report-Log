@@ -64,6 +64,8 @@ class DailyReportRecord(BaseModel):
 class ProjectUpdate(BaseModel):
     project_name: str
     work_notes: str
+    next_steps: Optional[str] = None
+    blockers: Optional[str] = None
     image_url: Optional[str] = None
 
 class SubmitReportRequest(BaseModel):
