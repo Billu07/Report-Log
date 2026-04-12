@@ -10,7 +10,8 @@ from uuid import uuid4
 import google.generativeai as genai
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from groq import AsyncGroq
@@ -79,10 +80,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Any:
+    token = credentials.credentials
+    try:
+        user_response = supabase.auth.get_user(token)
+        if not user_response.user:
+            raise HTTPException(status_code=401, detail="Invalid or expired token.")
+        return user_response.user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
+
 
 class DailyReportRecord(BaseModel):
     id: Optional[str] = None
     report_date: date
+    author_name: str
     raw_text: str
     formatted_report: str
     image_url: Optional[str] = None
@@ -315,11 +329,14 @@ async def submit_report(
     raw_text: str = Form(..., min_length=10),
     report_date: Optional[date] = Form(None),
     image: Optional[UploadFile] = File(None),
+    user: Any = Depends(get_current_user)
 ) -> SubmitReportResponse:
     """
     Accepts a raw brain dump and an optional image, generates a polished report,
     and persists it to the `daily_reports` table in Supabase.
     """
+    author_name = user.user_metadata.get("full_name") or user.email
+
     image_url: Optional[str] = None
     if image:
         image_url = await upload_image_to_supabase(image)
@@ -337,6 +354,7 @@ async def submit_report(
 
     payload = {
         "report_date": (report_date or date.today()).isoformat(),
+        "author_name": author_name,
         "raw_text": raw_text,
         "formatted_report": formatted_report,
         "image_url": image_url,
@@ -358,7 +376,7 @@ async def submit_report(
 
 
 @app.get("/reports", response_model=list[DailyReportRecord])
-async def get_reports() -> list[DailyReportRecord]:
+async def get_reports(user: Any = Depends(get_current_user)) -> list[DailyReportRecord]:
     """
     Returns all reports sorted newest-first so the calendar can map them by day.
     """

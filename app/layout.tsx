@@ -18,7 +18,7 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Daily Report Automation",
+  title: "Autolinium Execution Log",
   description: "Internal operational briefings and proofs of work.",
 };
 
