@@ -42,6 +42,12 @@ import {
   AtSign
 } from "lucide-react";
 import { useUploadThing } from "../utils/uploadthing";
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 // --- TYPES ---
 type ReportRecord = {
@@ -199,10 +205,8 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-[color:var(--background)] p-4 text-[color:var(--foreground)]">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="card-elevated w-full max-w-md p-8 sm:p-12">
-        <div className="mb-10 text-center">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/5 p-3">
-            <img src="/logo.png" alt="Company Logo" className="h-full w-full object-contain" />
-          </div>
+        <div className="mb-10 text-center flex flex-col items-center">
+          <img src="/logo.png" alt="Company Logo" className="h-16 w-16 object-contain mb-6" />
           <h1 className="font-heading text-3xl font-extrabold tracking-tight text-primary">Autolinium</h1>
           <p className="mt-2 text-sm text-[color:var(--muted-foreground)] font-medium">Enterprise Execution Log</p>
         </div>
@@ -272,6 +276,8 @@ export default function Dashboard() {
   const [reportsViewMode, setReportsViewMode] = useState<"list" | "calendar">("list");
   const [visibleMonth, setVisibleMonth] = useState<Date>(new Date());
 
+  const [replyTo, setReplyingTo] = useState<string | null>(null);
+
   const [selectedReport, setSelectedReport] = useState<ReportRecord | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
@@ -287,6 +293,7 @@ export default function Dashboard() {
   const [postContent, setPostContent] = useState("");
   const [postImage, setPostImage] = useState<File | null>(null);
   const [isPosting, setIsPosting] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   
   // Profile State
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -337,6 +344,15 @@ export default function Dashboard() {
 
   function handleMonthChange(direction: "previous" | "next") {
     setVisibleMonth((current) => direction === "previous" ? subMonths(current, 1) : addMonths(current, 1));
+  }
+
+  function handleReply(authorName: string, postId: string) {
+    setReplyingTo(authorName);
+    const input = document.getElementById(`comment-input-${postId}`) as HTMLInputElement;
+    if (input) {
+      input.value = `@${authorName} `;
+      input.focus();
+    }
   }
 
   // --- ACTIONS ---
@@ -408,6 +424,7 @@ export default function Dashboard() {
       }, session.access_token);
       const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
       setPosts(newPosts);
+      setReplyingTo(null);
     } catch (err) { console.error(err); }
   }
 
@@ -422,6 +439,38 @@ export default function Dashboard() {
 
   async function handleReaction(id: string, emoji: string, type: "post" | "comment") {
     if (!session) return;
+    
+    // OPTIMISTIC UPDATE
+    const userEmail = session.user.email;
+    const oldPosts = [...posts];
+    
+    setPosts(prevPosts => prevPosts.map(post => {
+      if (type === "post" && post.id === id) {
+        const hasReacted = post.reactions.some(r => r.emoji === emoji && r.author_email === userEmail);
+        const newReactions = hasReacted 
+          ? post.reactions.filter(r => !(r.emoji === emoji && r.author_email === userEmail))
+          : [...post.reactions, { id: "temp", author_email: userEmail!, emoji }];
+        return { ...post, reactions: newReactions };
+      }
+      
+      if (type === "comment") {
+        return {
+          ...post,
+          comments: post.comments.map(comment => {
+            if (comment.id === id) {
+              const hasReacted = comment.reactions?.some(r => r.emoji === emoji && r.author_email === userEmail);
+              const newReactions = hasReacted 
+                ? comment.reactions.filter(r => !(r.emoji === emoji && r.author_email === userEmail))
+                : [...(comment.reactions || []), { id: "temp", author_email: userEmail!, emoji }];
+              return { ...comment, reactions: newReactions };
+            }
+            return comment;
+          })
+        };
+      }
+      return post;
+    }));
+
     try {
       const url = type === "post" ? `${API_BASE_URL}/posts/${id}/reactions` : `${API_BASE_URL}/comments/${id}/reactions`;
       await fetchWithAuth(url, {
@@ -429,9 +478,14 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emoji }),
       }, session.access_token);
+      
+      // Silent background sync to get real IDs and ensure consistency
       const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
       setPosts(newPosts);
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err);
+      setPosts(oldPosts); // Revert on error
+    }
   }
 
   async function handleProfileImageUpload(file: File, type: "avatar" | "cover") {
@@ -469,12 +523,21 @@ export default function Dashboard() {
     } catch (err) { console.error(err); } finally { setIsUpdatingProfile(false); }
   }
 
-  function insertMention(postId: string, name: string) {
-    const input = document.getElementById(`comment-input-${postId}`) as HTMLInputElement;
-    if (input) {
-      const current = input.value;
-      input.value = `${current}@${name} `;
-      input.focus();
+  function insertMention(postId: string | null, name: string) {
+    if (postId === null) {
+      const current = postContent;
+      const lastIndex = current.lastIndexOf("@");
+      setPostContent(current.substring(0, lastIndex) + `@${name} `);
+      setMentionSearch(null);
+    } else {
+      const input = document.getElementById(`comment-input-${postId}`) as HTMLInputElement;
+      if (input) {
+        const current = input.value;
+        const lastIndex = current.lastIndexOf("@");
+        input.value = current.substring(0, lastIndex) + `@${name} `;
+        input.focus();
+        setMentionSearch(null);
+      }
     }
   }
 
@@ -504,12 +567,41 @@ export default function Dashboard() {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20">
       
+      {/* Premium Dynamic Background */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 bg-grid opacity-20" />
+        <div className="absolute inset-0 bg-mesh opacity-40 animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute inset-0 bg-grain opacity-5" />
+        
+        <AnimatePresence>
+          {activeTab === "feed" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-0 overflow-hidden"
+            >
+              {/* High-end Aurora Mesh */}
+              <div className="absolute inset-0 bg-primary/5" />
+              <div className="absolute top-[-10%] left-[-10%] w-[70%] h-[70%] bg-primary/10 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '15s' }} />
+              <div className="absolute bottom-[-10%] right-[-10%] w-[70%] h-[70%] bg-primary/10 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '12s', animationDelay: '2s' }} />
+              <div className="absolute top-[20%] right-[10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '18s', animationDelay: '4s' }} />
+              
+              {/* Subtle dynamic noise/grain overlay for texture */}
+              <div className="absolute inset-0 bg-grain opacity-[0.03]" />
+              
+              {/* Modern floating elements */}
+              <div className="absolute top-1/4 left-1/3 w-px h-64 bg-gradient-to-b from-transparent via-primary/20 to-transparent rotate-45 blur-sm" />
+              <div className="absolute bottom-1/4 right-1/3 w-px h-64 bg-gradient-to-b from-transparent via-primary/20 to-transparent -rotate-45 blur-sm" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       {/* SIDEBAR */}
       <aside className="flex w-72 flex-col border-r border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm z-20">
         <div className="mb-10 px-2 flex items-center gap-4 group">
-          <div className="h-10 w-10 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
-            <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
-          </div>
+          <img src="/logo.png" alt="Logo" className="h-10 w-10 object-contain group-hover:scale-110 transition-transform duration-500" />
           <div>
             <h1 className="font-heading text-xl font-bold tracking-tight text-primary">Autolinium</h1>
             <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-[color:var(--muted-foreground)] opacity-60">Operations</p>
@@ -556,7 +648,7 @@ export default function Dashboard() {
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto bg-[color:var(--background)] custom-scrollbar relative">
+      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
         <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--background)]/80 px-10 backdrop-blur-xl">
           <div className="flex items-center gap-4">
             {selectedReport && (
@@ -574,7 +666,7 @@ export default function Dashboard() {
           )}
         </header>
 
-        <div className="container mx-auto max-w-6xl py-10 px-10">
+        <div className="container mx-auto max-w-6xl py-10 px-10 relative z-10">
           <AnimatePresence mode="wait">
             {isLoading && (
               <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-[60vh] items-center justify-center">
@@ -585,29 +677,32 @@ export default function Dashboard() {
             {/* FEED VIEW */}
             {!isLoading && activeTab === "feed" && !isComposing && !selectedReport && (
               <motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-10 max-w-2xl mx-auto">
-                <div className="card-elevated p-8 rounded-[2rem] border-primary/5 bg-gradient-to-br from-[color:var(--card)] to-[color:var(--muted)]/20 shadow-xl shadow-black/5">
+                <div className="card-elevated p-8 rounded-[2rem] border-primary/10 bg-gradient-to-br from-[color:var(--card)]/80 to-[color:var(--muted)]/10 shadow-xl shadow-black/5 backdrop-blur-xl">
                   <div className="flex gap-5">
                     <img src={userAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
                     <form onSubmit={handlePostSubmit} className="flex-1 flex flex-col gap-5">
                       <div className="relative">
                         <textarea
                           value={postContent}
-                          onChange={(e) => setPostContent(e.target.value)}
+                          onChange={(e) => {
+                            setPostContent(e.target.value);
+                            if (e.target.value.endsWith("@")) setMentionSearch("post");
+                            else if (!e.target.value.includes("@")) setMentionSearch(null);
+                          }}
                           placeholder="Share an update or tag a teammate with @..."
                           className="w-full resize-none bg-transparent outline-none text-lg font-medium text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] min-h-[80px]"
                         />
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {profiles.length > 0 && postContent.endsWith("@") && (
-                            <div className="absolute top-full left-0 z-50 bg-[color:var(--card)] border border-[color:var(--border)] rounded-xl shadow-2xl p-2 flex flex-col gap-1 max-h-48 overflow-y-auto w-48">
-                              {profiles.map(p => (
-                                <button key={p.id} type="button" onClick={() => setPostContent(postContent + p.full_name + " ")} className="flex items-center gap-2 p-2 hover:bg-[color:var(--muted)] rounded-lg text-sm text-left">
-                                  <img src={p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random`} className="h-6 w-6 rounded-full" alt=""/>
-                                  <span className="truncate">{p.full_name}</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                        {mentionSearch === "post" && (
+                          <div className="absolute top-full left-0 z-50 mt-2 w-64 bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-2xl shadow-2xl overflow-hidden p-2 flex flex-col gap-1">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] p-2">Select Teammate</p>
+                            {profiles.map(p => (
+                              <button key={p.id} type="button" onClick={() => insertMention(null, p.full_name)} className="flex items-center gap-3 p-2 hover:bg-primary/5 hover:text-primary rounded-xl transition-colors text-sm font-semibold">
+                                <img src={p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random`} className="h-8 w-8 rounded-full border border-primary/10" alt=""/>
+                                <span>{p.full_name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       
                       {postImage && (
@@ -633,76 +728,108 @@ export default function Dashboard() {
 
                 <div className="flex flex-col gap-10">
                   {posts.length === 0 ? (
-                    <div className="text-center py-20 px-8 rounded-[2rem] border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] font-medium italic">No transmissions found in the current sector.</div>
+                    <div className="text-center py-20 px-8 rounded-[2rem] border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] font-medium italic backdrop-blur-sm">No transmissions found in the current sector.</div>
                   ) : (
                     posts.map(post => {
                       const postAvatar = post.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.author_name || "U")}&background=random`;
                       const isMyPost = post.author_email === session.user.email;
                       
                       return (
-                        <div key={post.id} className="card-elevated flex flex-col overflow-hidden rounded-[2.5rem] border-primary/5 hover:border-primary/10 transition-all duration-500 shadow-xl shadow-black/5">
+                        <div key={post.id} className="card-elevated flex flex-col overflow-hidden rounded-[2rem] border-primary/5 hover:border-primary/20 transition-all duration-500 shadow-xl shadow-black/5 bg-[color:var(--card)]/60 backdrop-blur-xl group/card relative">
                           {/* Post Header */}
-                          <div className="flex items-center justify-between p-7">
+                          <div className="flex items-center justify-between p-6">
                             <div className="flex items-center gap-4">
-                              <img src={postAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
+                              <div className="relative">
+                                <img src={postAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
+                                <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 border-2 border-[color:var(--card)]" />
+                              </div>
                               <div className="flex flex-col">
-                                <span className="font-bold text-lg text-[color:var(--foreground)] tracking-tight">{post.author_name}</span>
-                                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-60">
-                                  <Activity size={10} className="text-primary" />
+                                <span className="font-bold text-base text-[color:var(--foreground)] tracking-tight">{post.author_name}</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-60">
                                   {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
-                                </div>
+                                </span>
                               </div>
                             </div>
-                            <div className="flex gap-2">
-                              {isMyPost && <button onClick={() => handleDeletePost(post.id)} className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-destructive/10 text-destructive transition-colors"><Trash2 size={18} /></button>}
-                              <button className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-[color:var(--muted)] text-[color:var(--muted-foreground)]"><MoreHorizontal size={20} /></button>
+                            
+                            <div className="relative group/menu">
+                              <button className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-primary/10 text-[color:var(--muted-foreground)] hover:text-primary transition-all">
+                                <MoreHorizontal size={20} />
+                              </button>
+                              
+                              <div className="absolute right-0 top-full w-48 opacity-0 pointer-events-none group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto transition-all translate-y-2 group-hover/menu:translate-y-0 z-50 pt-2">
+                                <div className="absolute top-0 left-0 right-0 h-2" /> {/* Invisible Bridge */}
+                                <div className="bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-2xl shadow-2xl py-2">
+                                  {isMyPost && (
+                                    <button onClick={() => handleDeletePost(post.id)} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-destructive hover:bg-destructive/10 transition-colors">
+                                      <Trash2 size={16} /> Delete Post
+                                    </button>
+                                  )}
+                                  <button className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-[color:var(--foreground)] hover:bg-primary/5 transition-colors text-left">
+                                    <AtSign size={16} /> Copy Link
+                                  </button>
+                                  <button className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-[color:var(--foreground)] hover:bg-primary/5 transition-colors text-left">
+                                    <Lock size={16} /> Report
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </div>
                           
                           {/* Post Content */}
-                          <div className="px-8 pb-6 whitespace-pre-wrap text-[color:var(--foreground)] leading-relaxed text-lg font-medium opacity-90">
-                            {post.content.split(/(@\w+\s\w+)/g).map((part, i) => 
-                              part.startsWith("@") ? <span key={i} className="text-primary font-bold">{part}</span> : part
+                          <div className="px-6 pb-6 whitespace-pre-wrap text-[color:var(--foreground)] leading-relaxed text-lg font-medium opacity-90">
+                            {post.content.split(/(@[\w\s]+)/g).map((part, i) => 
+                              part.startsWith("@") ? <span key={i} className="text-primary font-bold cursor-pointer hover:underline">{part}</span> : part
                             )}
                           </div>
                           
                           {/* Post Image */}
                           {post.image_url && (
                             <div className="px-4 pb-4">
-                              <img src={post.image_url} className="w-full max-h-[600px] object-cover rounded-[2rem] border border-[color:var(--border)]" alt="" />
+                              <div className="overflow-hidden rounded-2xl border border-[color:var(--border)] group/img relative">
+                                <img src={post.image_url} className="w-full max-h-[500px] object-cover transition-transform duration-700 group-hover/img:scale-105" alt="" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                              </div>
                             </div>
                           )}
                           
                           {/* Post Actions */}
-                          <div className="px-8 py-5 border-t border-[color:var(--border)] bg-[color:var(--muted)]/5 flex items-center justify-between">
-                            <div className="flex flex-wrap gap-2.5">
+                          <div className="px-6 py-4 border-t border-[color:var(--border)] bg-black/5 flex items-center justify-between">
+                            <div className="flex flex-wrap gap-2">
                               {EMOJI_OPTIONS.map(({ char }) => {
                                 const count = post.reactions.filter(r => r.emoji === char).length;
                                 const isReacted = post.reactions.some(r => r.emoji === char && r.author_email === session.user.email);
+                                if (count === 0 && !isReacted) return null;
                                 return (
                                   <button 
                                     key={char} onClick={() => handleReaction(post.id, char, "post")}
-                                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-sm font-bold border transition-all duration-300 ${isReacted ? "bg-primary/10 border-primary/20 text-primary scale-105" : "bg-[color:var(--card)] border-[color:var(--border)] text-[color:var(--foreground)] hover:bg-[color:var(--muted)]"} ${count === 0 && !isReacted ? "hidden" : ""}`}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isReacted ? "bg-primary/10 border-primary/20 text-primary" : "bg-[color:var(--card)] border-[color:var(--border)] text-[color:var(--foreground)]"}`}
                                   >
-                                    <span className="text-base leading-none">{char}</span> 
+                                    <span>{char}</span> 
                                     <span>{count}</span>
                                   </button>
                                 )
                               })}
+                              
                               <div className="relative group/react">
-                                <button className="h-9 w-9 flex items-center justify-center rounded-xl border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-primary hover:border-primary/30 transition-all"><SmilePlus size={18} /></button>
-                                <div className="absolute bottom-full left-0 mb-2 p-2 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl shadow-2xl flex gap-1 opacity-0 pointer-events-none group-hover/react:opacity-100 group-hover/react:pointer-events-auto transition-all translate-y-2 group-hover/react:translate-y-0 z-30">
-                                  {EMOJI_OPTIONS.map(({ char }) => (
-                                    <button key={char} onClick={() => handleReaction(post.id, char, "post")} className="h-10 w-10 flex items-center justify-center text-xl rounded-xl hover:bg-primary/5 transition-colors">{char}</button>
-                                  ))}
+                                <button className="h-9 w-9 flex items-center justify-center rounded-full bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><SmilePlus size={18} /></button>
+                                <div className="absolute bottom-full left-0 opacity-0 pointer-events-none group-hover/react:opacity-100 group-hover/react:pointer-events-auto transition-all translate-y-2 group-hover/react:translate-y-0 z-50 pb-3">
+                                  <div className="bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-full shadow-2xl flex gap-1 p-2">
+                                    {EMOJI_OPTIONS.map(({ char }) => (
+                                      <button key={char} onClick={() => handleReaction(post.id, char, "post")} className="h-10 w-10 flex items-center justify-center text-xl rounded-full hover:bg-primary/10 transition-colors">{char}</button>
+                                    ))}
+                                  </div>
+                                  <div className="absolute bottom-0 left-0 right-0 h-3" /> {/* Invisible Bridge */}
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-60"><div className="flex items-center gap-1.5"><MessageSquare size={14}/> {post.comments.length}</div></div>
+                            
+                            <button className="flex items-center gap-2.5 px-4 py-2 rounded-full hover:bg-primary/5 text-[color:var(--muted-foreground)] hover:text-primary transition-all text-xs font-bold uppercase tracking-widest">
+                              <MessageSquare size={16} /> {post.comments.length} Comments
+                            </button>
                           </div>
                           
                           {/* Comments Section */}
-                          <div className="p-8 bg-black/5 flex flex-col gap-6">
+                          <div className="p-6 bg-black/5 flex flex-col gap-6">
                             {post.comments.length > 0 && (
                               <div className="flex flex-col gap-5">
                                 {post.comments.map(comment => {
@@ -720,7 +847,7 @@ export default function Dashboard() {
                                           {isMyComment && <button onClick={() => handleDeleteComment(post.id, comment.id)} className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-destructive/10 text-destructive opacity-0 group-hover/comment:opacity-100 transition-all"><Trash2 size={12}/></button>}
                                         </div>
                                         <div className="bg-[color:var(--card)] border border-[color:var(--border)] rounded-[1.5rem] rounded-tl-none px-5 py-3 text-base font-medium text-[color:var(--foreground)] opacity-90 shadow-sm">
-                                          {comment.content.split(/(@\w+\s\w+)/g).map((part, i) => part.startsWith("@") ? <span key={i} className="text-primary font-bold">{part}</span> : part)}
+                                          {comment.content.split(/(@[\w\s]+)/g).map((part, i) => part.startsWith("@") ? <span key={i} className="text-primary font-bold">{part}</span> : part)}
                                         </div>
                                         <div className="flex items-center gap-3 ml-2 mt-1">
                                           <button onClick={() => handleReply(comment.author_name || "", post.id)} className="text-[10px] font-bold uppercase tracking-widest text-primary opacity-0 group-hover/comment:opacity-100 transition-opacity">Reply</button>
@@ -745,10 +872,26 @@ export default function Dashboard() {
                             )}
                             <div className="flex gap-4 items-center relative">
                               <img src={userAvatar} className="h-10 w-10 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-2 ring-primary/5" alt="" />
-                              <form onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement; handleCommentSubmit(post.id, input.value); input.value = ''; }} className="flex-1 relative flex items-center">
-                                <input id={`comment-input-${post.id}`} name="comment" type="text" placeholder="Add a comment... type @ to mention" className="w-full h-12 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl px-6 pr-12 text-sm font-semibold outline-none focus:border-primary/30 focus:ring-4 ring-primary/5 transition-all" onChange={(e) => { if(e.target.value.endsWith("@")) insertMention(post.id, ""); }} />
-                                <button type="submit" className="absolute right-3 h-8 w-8 flex items-center justify-center rounded-xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><Send size={16} /></button>
-                              </form>
+                              <div className="flex-1 relative">
+                                <form onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement; handleCommentSubmit(post.id, input.value); input.value = ''; }} className="relative flex items-center">
+                                  <input id={`comment-input-${post.id}`} name="comment" type="text" placeholder="Add a comment... type @ to mention" className="w-full h-12 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl px-6 pr-12 text-sm font-semibold outline-none focus:border-primary/30 focus:ring-4 ring-primary/5 transition-all" onChange={(e) => {
+                                    if(e.target.value.endsWith("@")) setMentionSearch(post.id);
+                                    else if (!e.target.value.includes("@")) setMentionSearch(null);
+                                  }} />
+                                  <button type="submit" className="absolute right-3 h-8 w-8 flex items-center justify-center rounded-xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><Send size={16} /></button>
+                                </form>
+                                {mentionSearch === post.id && (
+                                  <div className="absolute bottom-full left-0 z-50 mb-2 w-64 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl shadow-2xl overflow-hidden p-2 flex flex-col gap-1">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] p-2 border-b border-[color:var(--border)] mb-1">Mention Member</p>
+                                    {profiles.map(p => (
+                                      <button key={p.id} type="button" onClick={() => insertMention(post.id, p.full_name)} className="flex items-center gap-3 p-2 hover:bg-primary/5 hover:text-primary rounded-xl transition-colors text-sm font-semibold">
+                                        <img src={p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random`} className="h-8 w-8 rounded-full border border-primary/10" alt=""/>
+                                        <span>{p.full_name}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -880,26 +1023,90 @@ export default function Dashboard() {
 
             {/* COMPOSE REPORT */}
              {!isLoading && isComposing && (
-               <motion.div key="compose" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="card-elevated mx-auto max-w-4xl p-12 rounded-[3rem] border-primary/10 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8"><button onClick={() => setIsComposing(false)} className="h-12 w-12 flex items-center justify-center rounded-2xl bg-[color:var(--muted)] text-[color:var(--muted-foreground)] hover:text-destructive transition-colors"><X size={24} /></button></div>
-                <header className="mb-12"><div className="h-1 w-20 bg-primary mb-6 rounded-full" /><h3 className="font-heading text-4xl font-black tracking-tight text-[color:var(--foreground)]">Log Briefing</h3><p className="text-[color:var(--muted-foreground)] font-medium mt-2">Update your daily accomplishments across different projects.</p></header>
-                <form onSubmit={handleReportSubmit} className="flex flex-col gap-12">
-                  <div className="flex flex-col gap-3"><label className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Report Date</label><input required type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="input-field max-w-xs h-14 text-lg font-bold rounded-2xl" /></div>
-                  <div className="flex flex-col gap-8">
-                    <div className="flex items-center justify-between border-b border-[color:var(--border)] pb-4"><h4 className="font-heading text-xl font-bold tracking-tight">Project Updates</h4><span className="text-[10px] font-black uppercase tracking-[0.2em] text-[color:var(--muted-foreground)] opacity-50">{updates.length} Projects</span></div>
-                    {updates.map((update, idx) => (
-                      <div key={update.id} className="relative rounded-[2rem] border border-primary/10 bg-primary/5 p-10 shadow-inner">
-                        {updates.length > 1 && <button type="button" onClick={() => setUpdates(prev => prev.filter(u => u.id !== update.id))} className="absolute right-6 top-6 h-8 w-8 flex items-center justify-center rounded-xl bg-white/10 text-white hover:bg-destructive/20 hover:text-destructive transition-all"><X size={16} /></button>}
-                        <div className="mb-8"><label className="mb-3 block text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Project Name / Client</label><input required type="text" value={update.projectName} onChange={(e) => { const newU = [...updates]; newU[idx].projectName = e.target.value; setUpdates(newU); }} placeholder="e.g. Acme Corp Migration" className="input-field h-14 text-lg font-bold rounded-2xl bg-white/5 border-white/10" /></div>
-                        <div className="mb-8"><label className="mb-3 block text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Work Notes</label><textarea required minLength={5} value={update.workNotes} onChange={(e) => { const newU = [...updates]; newU[idx].workNotes = e.target.value; setUpdates(newU); }} placeholder="Detail your progress..." className="input-field min-h-[140px] resize-none text-base font-medium rounded-2xl bg-white/5 border-white/10 leading-relaxed" /></div>
-                        <div><label className="mb-3 block text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Proof of Work (Optional)</label><label className="input-field h-14 flex cursor-pointer items-center justify-between bg-white/5 border-white/10 border-dashed hover:bg-white/10 transition-all rounded-2xl px-6"><span className="text-sm font-bold opacity-60 truncate">{update.selectedImage ? update.selectedImage.name : "Attach Screenshot..."}</span> <Camera size={20} className="text-primary/60" /><input type="file" accept="image/*" onChange={(e) => { const newU = [...updates]; newU[idx].selectedImage = e.target.files?.[0] ?? null; setUpdates(newU); }} className="hidden" /></label></div>
+               <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                 <motion.div 
+                   key="compose" 
+                   initial={{ opacity: 0, scale: 0.95 }} 
+                   animate={{ opacity: 1, scale: 1 }} 
+                   exit={{ opacity: 0, scale: 0.95 }} 
+                   className="bg-[color:var(--card)] border border-[color:var(--border)] w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+                 >
+                  <header className="flex items-center justify-between px-6 py-4 border-b border-[color:var(--border)] bg-[color:var(--muted)]/30">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                        <Plus size={18} strokeWidth={2.5} />
                       </div>
-                    ))}
-                    <button type="button" onClick={() => setUpdates(prev => [...prev, { id: Math.random().toString(), projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }])} className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.2em] text-primary hover:scale-105 transition-transform self-start bg-primary/5 px-6 py-3 rounded-2xl border border-primary/10 shadow-lg shadow-primary/5"><Plus size={16} strokeWidth={3} /> Add Another Project</button>
-                  </div>
-                  <div className="mt-8 flex justify-end gap-4 border-t border-[color:var(--border)] pt-10"><button type="button" onClick={() => setIsComposing(false)} className="h-14 px-8 rounded-2xl font-bold uppercase tracking-widest text-xs opacity-60 hover:opacity-100 transition-opacity">Cancel</button> <button type="submit" disabled={isSubmitting || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary h-14 px-10 rounded-2xl font-black uppercase tracking-[0.2em] text-sm shadow-2xl shadow-primary/30">{isSubmitting ? <LoadingSpinner className="h-5 w-5 border-t-white border-white/20" /> : "Submit Briefing"}</button></div>
-                </form>
-              </motion.div>
+                      <h3 className="text-base font-bold text-[color:var(--foreground)]">New Briefing</h3>
+                    </div>
+                    <button onClick={() => setIsComposing(false)} className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">
+                      <X size={20} />
+                    </button>
+                  </header>
+
+                  <form onSubmit={handleReportSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-bold text-[color:var(--muted-foreground)] uppercase tracking-wider">Report Date</label>
+                      <input required type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--input)] text-sm font-medium focus:ring-2 ring-primary/20 outline-none transition-all" />
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between border-b border-[color:var(--border)] pb-2">
+                        <h4 className="text-xs font-bold text-[color:var(--muted-foreground)] uppercase tracking-wider">Project Updates</h4>
+                      </div>
+
+                      {updates.map((update, idx) => (
+                        <div key={update.id} className="p-4 rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/20 relative group">
+                          {updates.length > 1 && (
+                            <button 
+                              type="button" 
+                              onClick={() => setUpdates(prev => prev.filter(u => u.id !== update.id))} 
+                              className="absolute right-3 top-3 text-[color:var(--muted-foreground)] hover:text-destructive transition-colors"
+                            >
+                              <X size={16} />
+                            </button>
+                          )}
+                          
+                          <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Project Name</label>
+                              <input required type="text" value={update.projectName} onChange={(e) => { const newU = [...updates]; newU[idx].projectName = e.target.value; setUpdates(newU); }} placeholder="e.g. Q2 Roadmap Planning" className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all" />
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Details</label>
+                              <textarea required minLength={5} value={update.workNotes} onChange={(e) => { const newU = [...updates]; newU[idx].workNotes = e.target.value; setUpdates(newU); }} placeholder="Summary of work completed..." className="w-full min-h-[100px] p-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all resize-none" />
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Attachment (Optional)</label>
+                              <label className="flex items-center justify-between px-3 h-10 rounded-lg border border-dashed border-[color:var(--border)] bg-white/5 hover:bg-white/10 cursor-pointer transition-all">
+                                <span className="text-xs text-[color:var(--muted-foreground)] truncate">{update.selectedImage ? update.selectedImage.name : "Choose file..."}</span>
+                                <ImageIcon size={14} className="text-[color:var(--muted-foreground)]" />
+                                <input type="file" accept="image/*" onChange={(e) => { const newU = [...updates]; newU[idx].selectedImage = e.target.files?.[0] ?? null; setUpdates(newU); }} className="hidden" />
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      <button 
+                        type="button" 
+                        onClick={() => setUpdates(prev => [...prev, { id: Math.random().toString(), projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }])} 
+                        className="w-full py-2 flex items-center justify-center gap-2 text-xs font-bold text-primary hover:bg-primary/5 border border-dashed border-primary/20 rounded-lg transition-all"
+                      >
+                        <Plus size={14} strokeWidth={3} /> Add Project
+                      </button>
+                    </div>
+                  </form>
+
+                  <footer className="px-6 py-4 border-t border-[color:var(--border)] bg-[color:var(--muted)]/30 flex items-center justify-end gap-3">
+                    <button type="button" onClick={() => setIsComposing(false)} className="px-4 py-2 text-sm font-bold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">Cancel</button>
+                    <button type="submit" onClick={() => (document.querySelector('form') as HTMLFormElement).requestSubmit()} disabled={isSubmitting || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary px-5 py-2 h-9 rounded-lg text-xs font-bold uppercase tracking-wider">
+                      {isSubmitting ? <LoadingSpinner className="h-4 w-4 border-t-white border-white/20" /> : "Save Briefing"}
+                    </button>
+                  </footer>
+                 </motion.div>
+               </div>
              )}
 
             {/* REPORT DETAIL VIEW */}

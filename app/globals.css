@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #0070f3;
-  --color-primary-foreground: #ffffff;
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -17,46 +17,45 @@
 }
 
 :root {
-  /* Company Theme - Blue/Navy */
+  /* Linear Blue Theme - Elite Engineering Aesthetic */
   --primary: #0070f3;
   --primary-foreground: #ffffff;
   
-  --radius: 1rem;
+  --radius: 0.75rem;
   
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #fafafa;
+  --foreground: #000000;
   
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #000000;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #000000;
   
-  --secondary: #f1f5f9;
-  --secondary-foreground: #475569;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #666666;
+  --muted: #f5f5f5;
+  --muted-foreground: #666666;
   --accent: #0070f3;
   --accent-foreground: #ffffff;
-  --destructive: #ef4444;
+  --destructive: #ff0000;
   --destructive-foreground: #ffffff;
   
-  --border: #e2e8f0;
+  --border: #eaeaea;
   --input: #ffffff;
   --ring: rgba(0, 112, 243, 0.2);
 }
 
 .dark {
-  --primary: #3b82f6;
+  --primary: #0070f3;
   --primary-foreground: #ffffff;
-  --background: #020617;
-  --foreground: #f1f5f9;
-  --card: #0f172a;
-  --card-foreground: #f1f5f9;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --border: #1e293b;
-  --input: #0f172a;
-  --ring: rgba(59, 130, 246, 0.3);
+  --background: #0b0e14;
+  --foreground: #f5f5f7;
+  --card: #13171f;
+  --card-foreground: #f5f5f7;
+  --muted: #1c212c;
+  --muted-foreground: #8a8f98;
+  --border: #232936;
+  --input: #0b0e14;
 }
 
 body {
@@ -65,6 +64,75 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+/* Modern Background Effects */
+.bg-mesh {
+  background-image: 
+    radial-gradient(circle at 0% 0%, var(--primary) 0.15, transparent 0.5),
+    radial-gradient(circle at 100% 100%, var(--primary) 0.1, transparent 0.5);
+  filter: blur(80px);
+}
+
+.bg-aurora {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  filter: blur(100px);
+  z-index: -1;
+  overflow: hidden;
+}
+
+.aurora-blob {
+  position: absolute;
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  background: var(--primary);
+  opacity: 0.15;
+  filter: blur(40px);
+  animation: aurora-float 20s infinite alternate;
+}
+
+@keyframes aurora-float {
+  0% { transform: translate(-10%, -10%) scale(1); }
+  100% { transform: translate(20%, 20%) scale(1.2); }
+}
+
+.bg-grid {
+  background-image: 
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(circle at center, black, transparent 80%);
+  opacity: 0.15;
+}
+
+.bg-dots {
+  background-image: radial-gradient(var(--border) 2px, transparent 2px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(circle at center, black, transparent 90%);
+}
+
+.bg-beams {
+  background-image: 
+    linear-gradient(to right, transparent, var(--primary) 1px, transparent 1px),
+    linear-gradient(to bottom, transparent, var(--primary) 1px, transparent 1px);
+  background-size: 80px 80px;
+  opacity: 0.03;
+  animation: beams-move 20s linear infinite;
+}
+
+@keyframes beams-move {
+  from { background-position: 0 0; }
+  to { background-position: 80px 80px; }
+}
+
+.bg-grain {
+  opacity: 0.05;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -79,22 +147,24 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--card-foreground);
     border-radius: var(--radius);
     border: 1px solid var(--border);
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
   }
 
   .card-elevated:hover {
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    border-color: var(--primary);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 0 15px oklch(from var(--primary) l c h / 0.1);
+    transform: translateY(-2px);
   }
 
   .button-primary {
-    padding: 0.6rem 1.25rem;
-    border-radius: 0.75rem;
-    background-color: var(--primary);
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.6rem;
+    background: linear-gradient(135deg, var(--primary), oklch(from var(--primary) calc(l - 0.05) c h));
     color: var(--primary-foreground);
     font-weight: 600;
-    transition: all 200ms ease-out;
-    border: none;
+    transition: all 300ms ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -103,22 +173,19 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .button-primary:hover {
-    filter: brightness(1.1);
+    filter: brightness(1.05);
+    box-shadow: 0 0 25px oklch(from var(--primary) l c h / 0.4);
     transform: translateY(-1px);
-  }
-
-  .button-primary:active {
-    transform: translateY(0px);
   }
 
   .button-secondary {
     padding: 0.6rem 1.25rem;
-    border-radius: 0.75rem;
+    border-radius: 0.5rem;
     background-color: var(--muted);
     color: var(--foreground);
     font-weight: 600;
-    transition: all 200ms ease-out;
-    border: none;
+    transition: all 200ms ease;
+    border: 1px solid var(--border);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -129,11 +196,11 @@ h1, h2, h3, h4, h5, h6 {
   .input-field {
     width: 100%;
     padding: 0.75rem 1rem;
-    border-radius: 0.75rem;
+    border-radius: 0.5rem;
     border: 1px solid var(--border);
     background-color: var(--input);
     color: var(--foreground);
-    transition: all 200ms ease-out;
+    transition: all 200ms ease;
     font-size: 0.95rem;
   }
 
@@ -144,11 +211,11 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .sidebar-nav-item {
-    padding: 0.7rem 1rem;
-    border-radius: 0.75rem;
+    padding: 0.6rem 1rem;
+    border-radius: 0.5rem;
     font-size: 0.9rem;
     font-weight: 600;
-    transition: all 200ms ease-out;
+    transition: all 200ms ease;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -161,13 +228,13 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .sidebar-nav-item:hover {
-    background-color: var(--muted);
     color: var(--foreground);
+    background-color: var(--muted);
   }
 
   .sidebar-nav-item.active {
-    background-color: var(--primary);
-    color: var(--primary-foreground);
+    background-color: rgba(0, 112, 243, 0.1);
+    color: var(--primary);
   }
 }
 

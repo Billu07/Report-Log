@@ -1,0 +1,10 @@
+INFO:     Will watch for changes in these directories: ['D:\\Autolinium V2\\Projects\\report\\backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [15832] using WatchFiles
+INFO:     Started server process [21368]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:httpx:HTTP Request: GET https://qttprlsycdjndbgcidoj.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: GET https://qttprlsycdjndbgcidoj.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: GET https://qttprlsycdjndbgcidoj.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: GET https://qttprlsycdjndbgcidoj.supabase.co/auth/v1/user "HTTP/2 200 OK"
