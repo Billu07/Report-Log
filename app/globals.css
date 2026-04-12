@@ -12,8 +12,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-playfair), ui-serif, Georgia, serif;
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -76,143 +76,140 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-serif);
+  font-family: var(--font-heading);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
-/* Component Classes */
-.soft-shadow {
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
-}
+@layer components {
+  /* Component Classes */
+  .soft-shadow {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+  }
 
-.glow-dot {
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-  box-shadow: 
-    0 0 20px rgba(34, 197, 94, 0.6),
-    0 0 40px rgba(34, 197, 94, 0.3),
-    inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  animation: pulse-glow 2s ease-in-out infinite;
-}
+  .glow-dot {
+    position: absolute;
+    inset: 4px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+    box-shadow: 
+      0 0 20px rgba(34, 197, 94, 0.6),
+      0 0 40px rgba(34, 197, 94, 0.3),
+      inset 0 1px 2px rgba(255, 255, 255, 0.5);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
 
-@keyframes pulse-glow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
+  .card-elevated {
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+    transition: all 300ms ease-out;
+  }
 
-.card-elevated {
-  background-color: var(--card);
-  color: var(--card-foreground);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
-  transition: all 300ms ease-out;
-}
+  .card-elevated:hover {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  }
 
-.card-elevated:hover {
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-}
+  .button-primary {
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    background: linear-gradient(to right, #22c55e, #16a34a);
+    color: white;
+    font-weight: 500;
+    transition: all 300ms ease-out;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
 
-.button-primary {
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  background: linear-gradient(to right, #22c55e, #16a34a);
-  color: white;
-  font-weight: 500;
-  transition: all 300ms ease-out;
-  border: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
+  .button-primary:hover {
+    box-shadow: 0 10px 15px -3px rgba(34, 197, 94, 0.3);
+  }
 
-.button-primary:hover {
-  box-shadow: 0 10px 15px -3px rgba(34, 197, 94, 0.3);
-}
+  .button-primary:active {
+    transform: scale(0.95);
+  }
 
-.button-primary:active {
-  transform: scale(0.95);
-}
+  .button-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-.button-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  .button-secondary {
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--muted);
+    color: var(--foreground);
+    font-weight: 500;
+    transition: all 300ms ease-out;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
 
-.button-secondary {
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  background-color: var(--muted);
-  color: var(--foreground);
-  font-weight: 500;
-  transition: all 300ms ease-out;
-  border: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
+  .button-secondary:hover {
+    background-color: var(--border);
+  }
 
-.button-secondary:hover {
-  background-color: var(--border);
-}
+  .button-secondary:active {
+    transform: scale(0.95);
+  }
 
-.button-secondary:active {
-  transform: scale(0.95);
-}
+  .input-field {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background-color: var(--input);
+    color: var(--foreground);
+    transition: all 200ms ease-out;
+    font-size: 1rem;
+  }
 
-.input-field {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--border);
-  background-color: var(--input);
-  color: var(--foreground);
-  transition: all 200ms ease-out;
-  font-size: 1rem;
-}
+  .input-field::placeholder {
+    color: var(--muted-foreground);
+  }
 
-.input-field::placeholder {
-  color: var(--muted-foreground);
-}
+  .input-field:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary);
+  }
 
-.input-field:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary);
-}
+  .sidebar-nav-item {
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 200ms ease-out;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--muted-foreground);
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+  }
 
-.sidebar-nav-item {
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: all 200ms ease-out;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: var(--muted-foreground);
-  background: transparent;
-  border: none;
-  width: 100%;
-  text-align: left;
-}
+  .sidebar-nav-item:hover {
+    background-color: var(--muted);
+    color: var(--foreground);
+  }
 
-.sidebar-nav-item:hover {
-  background-color: var(--muted);
-  color: var(--foreground);
-}
-
-.sidebar-nav-item.active {
-  background-color: var(--primary);
-  color: white;
+  .sidebar-nav-item.active {
+    background-color: var(--primary);
+    color: white;
+  }
 }
 
 /* Animations */
