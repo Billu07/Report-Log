@@ -1103,8 +1103,27 @@ export default function Dashboard() {
       ? { email: params ?? undefined, fullName: null, avatarUrl: null }
       : params;
     const normalizedEmail = (payload.email || "").trim().toLowerCase();
+    const normalizedName = (payload.fullName || "").trim();
+    const localProfileByName = normalizedName
+      ? profiles.find((member) => member.full_name?.trim().toLowerCase() === normalizedName.toLowerCase())
+      : null;
     if (!normalizedEmail) {
-      notify("warning", "Profile is unavailable for this activity.");
+      if (localProfileByName) {
+        setViewingProfile(localProfileByName);
+        return;
+      }
+      if (normalizedName) {
+        setViewingProfile({
+          id: `optimistic-name-${normalizedName.toLowerCase().replace(/\s+/g, "-")}`,
+          user_email: "unknown@autolinium.local",
+          full_name: normalizedName,
+          avatar_url: payload.avatarUrl || null,
+          cover_url: null,
+          bio: null,
+        });
+      } else {
+        notify("warning", "Profile is unavailable for this activity.");
+      }
       return;
     }
 
@@ -2461,48 +2480,44 @@ export default function Dashboard() {
                   <div className="flex gap-5">
                     <img src={userAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
                     <form onSubmit={handlePostSubmit} className="flex-1 flex flex-col gap-5">
-                      <div className="relative">
-                        <textarea
-                          value={postContent}
-                          onChange={(e) => {
-                            setPostContent(e.target.value);
-                            if (e.target.value.endsWith("@")) setMentionSearch("post");
-                            else if (!e.target.value.includes("@")) setMentionSearch(null);
-                          }}
-                          placeholder="Share an update or tag a teammate with @..."
-                          className="min-h-[88px] w-full resize-none bg-transparent text-base font-medium leading-relaxed text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)]"
-                        />
-                        {mentionSearch === "post" && (
-                          <div className="absolute top-full left-0 z-50 mt-2 flex w-64 flex-col gap-1 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 p-2 shadow-2xl backdrop-blur-2xl dark:border-[#3a5885] dark:bg-[#0e2039]/95">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] p-2">Select Teammate</p>
-                            {profiles.map(p => (
-                              <button key={p.id} type="button" onClick={() => insertMention(null, p.full_name)} className="flex items-center gap-3 p-2 hover:bg-primary/5 hover:text-primary rounded-xl transition-colors text-sm font-semibold">
-                                <img src={p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random`} className="h-8 w-8 rounded-full border border-primary/10" alt=""/>
-                                <span>{p.full_name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-3.5 dark:border-[#35527c] dark:bg-[#112844]">
-                        <div className="mb-2.5 flex items-center justify-between gap-3">
-                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Quick Templates</span>
-                          <span className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">
-                            {hasLoadedFeedDraft ? "Draft autosaved" : "Preparing draft memory..."}
-                          </span>
-                        </div>
-                        <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                      <div className="rounded-[1.5rem] border border-[color:var(--border)] bg-[color:var(--card)]/82 p-4 shadow-inner dark:border-[#35527c] dark:bg-[#10233d]/88">
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
                           {FEED_TEMPLATE_SNIPPETS.map((template) => (
                             <button
                               key={template.id}
                               type="button"
                               onClick={() => applyFeedTemplate(template.text)}
-                              className="shrink-0 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:text-primary dark:border-[#3a5986] dark:bg-[#10243e]"
+                              className="rounded-full border border-[color:var(--border)] bg-[color:var(--muted)]/30 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.13em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:bg-primary/10 hover:text-primary dark:border-[#3a5986] dark:bg-[#122945]"
                             >
                               {template.label}
                             </button>
                           ))}
+                        </div>
+                        <div className="relative">
+                          <textarea
+                            value={postContent}
+                            onChange={(e) => {
+                              setPostContent(e.target.value);
+                              if (e.target.value.endsWith("@")) setMentionSearch("post");
+                              else if (!e.target.value.includes("@")) setMentionSearch(null);
+                            }}
+                            placeholder="Share an update or tag a teammate with @..."
+                            className="min-h-[104px] w-full resize-none rounded-xl border border-[color:var(--border)] bg-[color:var(--background)]/55 p-3.5 text-base font-medium leading-relaxed text-[color:var(--foreground)] outline-none transition-all placeholder:text-[color:var(--muted-foreground)] focus:border-primary/30 dark:border-[#3a5986] dark:bg-[#0f223b]/82"
+                          />
+                          {mentionSearch === "post" && (
+                            <div className="absolute top-full left-0 z-50 mt-2 flex w-64 flex-col gap-1 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 p-2 shadow-2xl backdrop-blur-2xl dark:border-[#3a5885] dark:bg-[#0e2039]/95">
+                              <p className="p-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">Select Teammate</p>
+                              {profiles.map(p => (
+                                <button key={p.id} type="button" onClick={() => insertMention(null, p.full_name)} className="flex items-center gap-3 rounded-xl p-2 text-sm font-semibold transition-colors hover:bg-primary/5 hover:text-primary">
+                                  <img src={p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random`} className="h-8 w-8 rounded-full border border-primary/10" alt=""/>
+                                  <span>{p.full_name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-2 text-[10px] font-semibold text-[color:var(--muted-foreground)]">
+                          {hasLoadedFeedDraft ? "Draft autosaved" : "Preparing draft memory..."}
                         </div>
                       </div>
                       
@@ -3080,13 +3095,13 @@ export default function Dashboard() {
 
             {/* COMPOSE REPORT */}
              {!isLoading && isComposing && (
-               <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={resetComposer}>
+               <div className="fixed inset-0 z-[920] flex items-start justify-center overflow-y-auto bg-black/45 p-3 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20" onClick={resetComposer}>
                  <motion.div 
                    key="compose" 
                    initial={{ opacity: 0, scale: 0.95 }} 
                    animate={{ opacity: 1, scale: 1 }} 
                    exit={{ opacity: 0, scale: 0.95 }} 
-                   className="bg-[color:var(--card)] border border-[color:var(--border)] w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+                   className="my-2 flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-2xl max-h-[calc(100dvh-2rem)]"
                    onClick={(e) => e.stopPropagation()}
                  >
                   <header className="flex items-center justify-between px-6 py-4 border-b border-[color:var(--border)] bg-[color:var(--muted)]/30">
