@@ -34,6 +34,8 @@ import {
   Camera,
   Activity,
   Send,
+  Command,
+  Sparkles,
   Heart,
   Rocket,
   Flame,
@@ -108,6 +110,21 @@ type SubmitReportResponse = {
   message: string;
   provider: string;
   report: ReportRecord;
+};
+
+type OptimizeTone = "executive" | "concise" | "impact";
+
+type OptimizeUpdatesResponse = {
+  message: string;
+  provider: string;
+  preview: string;
+  updates: Array<{
+    project_name: string;
+    work_notes: string;
+    next_steps?: string | null;
+    blockers?: string | null;
+    image_url?: string | null;
+  }>;
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/backend";
@@ -501,6 +518,14 @@ type ProjectUpdateState = {
   uploadedImageUrl: string | null;
 };
 
+type CommandPaletteAction = {
+  id: string;
+  title: string;
+  subtitle: string;
+  keywords: string;
+  run: () => void | Promise<void>;
+};
+
 function createEmptyUpdate(): ProjectUpdateState {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -540,6 +565,9 @@ export default function Dashboard() {
   const [reportDate, setReportDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [updates, setUpdates] = useState<ProjectUpdateState[]>(() => [createEmptyUpdate()]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copilotTone, setCopilotTone] = useState<OptimizeTone>("executive");
+  const [isOptimizingUpdates, setIsOptimizingUpdates] = useState(false);
+  const [copilotPreview, setCopilotPreview] = useState<string>("");
 
   // Compose Post State
   const [postContent, setPostContent] = useState("");
@@ -552,6 +580,9 @@ export default function Dashboard() {
   
   // Profile State
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const [commandFocusedIndex, setCommandFocusedIndex] = useState(0);
 
   const { startUpload } = useUploadThing("imageUploader");
 
@@ -668,9 +699,87 @@ export default function Dashboard() {
 
   function resetComposer() {
     setIsSubmitting(false);
+    setIsOptimizingUpdates(false);
+    setCopilotPreview("");
+    setCopilotTone("executive");
     setReportDate(format(new Date(), "yyyy-MM-dd"));
     setUpdates([createEmptyUpdate()]);
     setIsComposing(false);
+  }
+
+  function openWorkspaceTab(tab: "dashboard" | "reports" | "feed" | "profile" | "settings") {
+    setActiveTab(tab);
+    setSelectedReport(null);
+    setSelectedAuthor(null);
+    setIsComposing(false);
+  }
+
+  function openComposeBriefing() {
+    setSelectedReport(null);
+    setSelectedAuthor(null);
+    setActiveTab("reports");
+    setIsComposing(true);
+  }
+
+  async function handleOptimizeUpdates() {
+    if (!session) return;
+    const nonEmptyUpdates = updates.filter(
+      (update) => update.projectName.trim() && update.workNotes.trim()
+    );
+    if (nonEmptyUpdates.length === 0) {
+      notify("warning", "Add at least one project update before optimizing.");
+      return;
+    }
+
+    setIsOptimizingUpdates(true);
+    try {
+      const payload = {
+        style: copilotTone,
+        updates: updates.map((update) => ({
+          project_name: update.projectName.trim(),
+          work_notes: update.workNotes.trim(),
+          next_steps: update.nextSteps?.trim() || null,
+          blockers: update.blockers?.trim() || null,
+          image_url: update.uploadedImageUrl || null,
+        })),
+      };
+
+      const optimized = await fetchWithAuth(
+        `${API_BASE_URL}/optimize-updates`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+        session.access_token
+      ) as OptimizeUpdatesResponse;
+
+      if (!optimized?.updates?.length) {
+        notify("warning", "AI returned no rewrite. Please try again.");
+        return;
+      }
+
+      setUpdates((prev) =>
+        prev.map((oldUpdate, idx) => {
+          const nextUpdate = optimized.updates[idx];
+          if (!nextUpdate) return oldUpdate;
+          return {
+            ...oldUpdate,
+            projectName: nextUpdate.project_name ?? oldUpdate.projectName,
+            workNotes: nextUpdate.work_notes ?? oldUpdate.workNotes,
+            nextSteps: nextUpdate.next_steps ?? "",
+            blockers: nextUpdate.blockers ?? "",
+          };
+        })
+      );
+      setCopilotPreview(optimized.preview || "");
+      notify("success", `Draft optimized via ${optimized.provider}.`);
+    } catch (err) {
+      console.error(err);
+      notify("error", getErrorMessage(err, "Unable to optimize this draft."));
+    } finally {
+      setIsOptimizingUpdates(false);
+    }
   }
 
   function applyProfileToLocalState(nextProfile: ProfileRecord) {
@@ -701,13 +810,31 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!mounted) return;
-    const shouldLockScroll = Boolean(viewingImage || viewingProfile);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setIsCommandPaletteOpen((previous) => !previous);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!isCommandPaletteOpen) return;
+    setCommandQuery("");
+    setCommandFocusedIndex(0);
+  }, [isCommandPaletteOpen]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const shouldLockScroll = Boolean(viewingImage || viewingProfile || isCommandPaletteOpen);
     const previousOverflow = document.body.style.overflow;
     if (shouldLockScroll) document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [mounted, viewingImage, viewingProfile]);
+  }, [mounted, viewingImage, viewingProfile, isCommandPaletteOpen]);
 
   // Load Data
   useEffect(() => {
@@ -752,12 +879,106 @@ export default function Dashboard() {
   }, [session]);
 
   const isCEO = session?.user?.email?.toLowerCase() === CEO_EMAIL;
+  const commandActions: CommandPaletteAction[] = [
+    ...(isCEO
+      ? [{
+          id: "go-dashboard",
+          title: "Go To Team Overview",
+          subtitle: "Open CEO dashboard",
+          keywords: "dashboard ceo team overview",
+          run: () => openWorkspaceTab("dashboard"),
+        } satisfies CommandPaletteAction]
+      : []),
+    {
+      id: "go-reports",
+      title: "Go To Reports",
+      subtitle: "Open briefing logs",
+      keywords: "reports logs briefings",
+      run: () => openWorkspaceTab("reports"),
+    },
+    {
+      id: "go-feed",
+      title: "Go To Feed",
+      subtitle: "Open company feed",
+      keywords: "feed company updates posts",
+      run: () => openWorkspaceTab("feed"),
+    },
+    {
+      id: "go-profile",
+      title: "Go To Profile",
+      subtitle: "Open profile editor",
+      keywords: "profile account",
+      run: () => openWorkspaceTab("profile"),
+    },
+    {
+      id: "go-settings",
+      title: "Go To Settings",
+      subtitle: "Open system configuration",
+      keywords: "settings configuration system",
+      run: () => openWorkspaceTab("settings"),
+    },
+    {
+      id: "create-briefing",
+      title: "Create New Briefing",
+      subtitle: "Open report composer",
+      keywords: "create new report briefing compose",
+      run: openComposeBriefing,
+    },
+    {
+      id: "toggle-theme",
+      title: theme === "dark" ? "Switch To Light Mode" : "Switch To Dark Mode",
+      subtitle: "Toggle workspace appearance",
+      keywords: "theme dark light mode",
+      run: () => setTheme(theme === "dark" ? "light" : "dark"),
+    },
+    {
+      id: "optimize-draft",
+      title: "AI Optimize Draft",
+      subtitle: isComposing ? "Rewrite current update notes" : "Open composer first to optimize",
+      keywords: "ai optimize rewrite draft",
+      run: () => {
+        if (isComposing) return handleOptimizeUpdates();
+        openComposeBriefing();
+      },
+    },
+    {
+      id: "sign-out",
+      title: "Sign Out",
+      subtitle: "End current session",
+      keywords: "logout sign out",
+      run: () => supabase.auth.signOut(),
+    },
+  ];
+  const normalizedCommandQuery = commandQuery.trim().toLowerCase();
+  const visibleCommandActions = normalizedCommandQuery
+    ? commandActions.filter((action) =>
+        `${action.title} ${action.subtitle} ${action.keywords}`.toLowerCase().includes(normalizedCommandQuery)
+      )
+    : commandActions;
   
   useEffect(() => {
     if (session && !isCEO && activeTab === "dashboard") {
       setActiveTab("reports");
     }
   }, [session, isCEO, activeTab]);
+
+  useEffect(() => {
+    if (!isCommandPaletteOpen) return;
+    setCommandFocusedIndex((prev) => {
+      if (visibleCommandActions.length === 0) return 0;
+      return Math.min(prev, visibleCommandActions.length - 1);
+    });
+  }, [isCommandPaletteOpen, visibleCommandActions.length]);
+
+  function executeCommand(action: CommandPaletteAction) {
+    setIsCommandPaletteOpen(false);
+    setCommandQuery("");
+    setCommandFocusedIndex(0);
+    void Promise.resolve(action.run()).catch((err) => {
+      console.error(err);
+      notify("error", getErrorMessage(err, "Command failed."));
+    });
+  }
 
   function handleMonthChange(direction: "previous" | "next") {
     setVisibleMonth((current) => direction === "previous" ? subMonths(current, 1) : addMonths(current, 1));
@@ -1197,6 +1418,93 @@ export default function Dashboard() {
         document.body
       )
     : null;
+  const commandPalette = mounted && isCommandPaletteOpen
+    ? createPortal(
+        <div
+          className="fixed inset-0 z-[540] flex items-start justify-center bg-black/45 p-4 pt-20 backdrop-blur-sm sm:p-6 sm:pt-24"
+          onClick={() => setIsCommandPaletteOpen(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.99 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-[0_32px_88px_-34px_rgba(0,0,0,0.62)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 border-b border-[color:var(--border)] px-4 py-3.5 sm:px-5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Command size={16} />
+              </div>
+              <input
+                autoFocus
+                value={commandQuery}
+                onChange={(event) => setCommandQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setIsCommandPaletteOpen(false);
+                    return;
+                  }
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setCommandFocusedIndex((prev) =>
+                      visibleCommandActions.length === 0 ? 0 : Math.min(prev + 1, visibleCommandActions.length - 1)
+                    );
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setCommandFocusedIndex((prev) => Math.max(prev - 1, 0));
+                    return;
+                  }
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    const selectedAction = visibleCommandActions[commandFocusedIndex];
+                    if (selectedAction) executeCommand(selectedAction);
+                  }
+                }}
+                placeholder="Search actions... (Ctrl/Cmd + K)"
+                className="h-10 w-full bg-transparent text-sm font-semibold outline-none placeholder:text-[color:var(--muted-foreground)]"
+              />
+              <span className="rounded-lg border border-[color:var(--border)] px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
+                esc
+              </span>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-2.5 custom-scrollbar">
+              {visibleCommandActions.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-10 text-center text-sm text-[color:var(--muted-foreground)]">
+                  No matching command.
+                </div>
+              ) : (
+                visibleCommandActions.map((action, idx) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onMouseEnter={() => setCommandFocusedIndex(idx)}
+                    onClick={() => executeCommand(action)}
+                    className={`mb-1.5 w-full rounded-2xl border px-4 py-3 text-left transition-all ${
+                      idx === commandFocusedIndex
+                        ? "border-primary/35 bg-primary/10 shadow-sm"
+                        : "border-transparent hover:border-[color:var(--border)] hover:bg-[color:var(--muted)]/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold tracking-tight">{action.title}</span>
+                      {idx === commandFocusedIndex && (
+                        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-primary">Enter</span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs font-medium text-[color:var(--muted-foreground)]">{action.subtitle}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )
+    : null;
 
   return (
     <div className="flex min-h-screen w-full bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20 lg:h-screen lg:overflow-hidden">
@@ -1296,9 +1604,19 @@ export default function Dashboard() {
             </h2>
           </div>
           
-          {!isComposing && !selectedReport && activeTab !== "profile" && activeTab !== "feed" && activeTab !== "settings" && (
-            <button onClick={() => setIsComposing(true)} className="button-primary h-10 rounded-xl px-3.5 font-bold tracking-tight shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 sm:h-11 sm:px-6"><Plus size={18} /> <span className="hidden sm:inline">Create Report</span></button>
-          )}
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setIsCommandPaletteOpen(true)}
+              className="flex h-10 items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-xs font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:text-primary sm:h-11 sm:px-4"
+            >
+              <Command size={14} />
+              <span className="hidden sm:inline">Actions</span>
+              <span className="rounded-md border border-[color:var(--border)] px-1.5 py-0.5 text-[9px] tracking-[0.08em] text-[color:var(--muted-foreground)]">Ctrl K</span>
+            </button>
+            {!isComposing && !selectedReport && activeTab !== "profile" && activeTab !== "feed" && activeTab !== "settings" && (
+              <button onClick={openComposeBriefing} className="button-primary h-10 rounded-xl px-3.5 font-bold tracking-tight shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 sm:h-11 sm:px-6"><Plus size={18} /> <span className="hidden sm:inline">Create Report</span></button>
+            )}
+          </div>
         </header>
 
         <div className="sticky top-20 z-30 border-b border-[color:var(--border)] bg-[color:var(--background)]/80 px-4 py-3 backdrop-blur-xl sm:px-6 lg:hidden">
@@ -1778,6 +2096,52 @@ export default function Dashboard() {
                       <input required type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--input)] text-sm font-medium focus:ring-2 ring-primary/20 outline-none transition-all" />
                     </div>
 
+                    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-4 dark:border-[#39567f] dark:bg-[#112741]">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 text-primary">
+                            <Sparkles size={14} />
+                            <h4 className="text-[11px] font-black uppercase tracking-[0.18em]">AI Copilot</h4>
+                          </div>
+                          <p className="mt-1 text-xs font-medium text-[color:var(--muted-foreground)]">Refine tone and clarity before generating the final briefing.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleOptimizeUpdates()}
+                          disabled={isOptimizingUpdates || isSubmitting}
+                          className="button-primary h-9 rounded-lg px-4 text-[10px] font-black uppercase tracking-[0.15em] disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {isOptimizingUpdates ? <LoadingSpinner className="h-3.5 w-3.5" tone="light" /> : <Sparkles size={13} />}
+                          Optimize Draft
+                        </button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {([
+                          { value: "executive", label: "Executive" },
+                          { value: "concise", label: "Concise" },
+                          { value: "impact", label: "Impact-Focused" },
+                        ] as Array<{ value: OptimizeTone; label: string }>).map((tone) => (
+                          <button
+                            key={tone.value}
+                            type="button"
+                            onClick={() => setCopilotTone(tone.value)}
+                            className={`rounded-lg border px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] transition-all ${
+                              copilotTone === tone.value
+                                ? "border-primary/30 bg-primary/15 text-primary"
+                                : "border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:border-primary/20 hover:text-primary"
+                            }`}
+                          >
+                            {tone.label}
+                          </button>
+                        ))}
+                      </div>
+                      {copilotPreview && (
+                        <p className="mt-3 rounded-lg border border-primary/15 bg-primary/10 px-3 py-2 text-xs font-semibold text-[color:var(--foreground)]">
+                          {copilotPreview}
+                        </p>
+                      )}
+                    </div>
+
                     <div className="space-y-4">
                       <div className="flex items-center justify-between border-b border-[color:var(--border)] pb-2">
                         <h4 className="text-xs font-bold text-[color:var(--muted-foreground)] uppercase tracking-wider">Project Updates</h4>
@@ -1852,7 +2216,7 @@ export default function Dashboard() {
 
                   <footer className="px-6 py-4 border-t border-[color:var(--border)] bg-[color:var(--muted)]/30 flex items-center justify-end gap-3">
                     <button type="button" onClick={resetComposer} className="px-4 py-2 text-sm font-bold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">Cancel</button>
-                    <button type="submit" form="briefing-entry-form" disabled={isSubmitting || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary px-5 py-2 h-9 rounded-lg text-xs font-bold uppercase tracking-wider">
+                    <button type="submit" form="briefing-entry-form" disabled={isSubmitting || isOptimizingUpdates || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary px-5 py-2 h-9 rounded-lg text-xs font-bold uppercase tracking-wider">
                       {isSubmitting ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Save Briefing"}
                     </button>
                   </footer>
@@ -1922,6 +2286,7 @@ export default function Dashboard() {
           </AnimatePresence>
         </div>
       </main>
+      {commandPalette}
       {attachmentViewer}
     </div>
   );

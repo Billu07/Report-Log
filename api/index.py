@@ -2,6 +2,7 @@ import os
 import logging
 import httpx
 import json
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -101,6 +102,16 @@ class SubmitReportResponse(BaseModel):
     message: str
     report: DailyReportRecord
     provider: str
+
+class OptimizeUpdatesRequest(BaseModel):
+    updates: list[ProjectUpdate]
+    style: Optional[str] = "executive"
+
+class OptimizeUpdatesResponse(BaseModel):
+    message: str
+    provider: str
+    updates: list[ProjectUpdate]
+    preview: str
 
 class CommentRecord(BaseModel):
     id: Optional[str] = None
@@ -253,6 +264,157 @@ async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
             lines.append(f"![Proof of Work]({u['image_url']})")
     return "\n".join(lines), "fallback"
 
+def build_optimize_prompt(updates: list[dict[str, Any]], style: str) -> str:
+    serialized = json.dumps(
+        [
+            {
+                "project_name": u.get("project_name", ""),
+                "work_notes": u.get("work_notes", ""),
+                "next_steps": u.get("next_steps"),
+                "blockers": u.get("blockers"),
+                "image_url": u.get("image_url"),
+            }
+            for u in updates
+        ],
+        ensure_ascii=False,
+    )
+    return (
+        "You are a technical writing copilot for an automation agency.\n"
+        f"Rewrite these update entries in a {style} style while preserving meaning and factual details.\n"
+        "Rules:\n"
+        "- Keep perspective in first person where suitable.\n"
+        "- Do not invent work, blockers, or next steps.\n"
+        "- Keep project_name unchanged unless grammar fixes are needed.\n"
+        "- Keep image_url exactly as provided.\n"
+        "- Return strict JSON array only, no markdown fences, with objects in this shape:\n"
+        "  {\"project_name\": string, \"work_notes\": string, \"next_steps\": string|null, \"blockers\": string|null, \"image_url\": string|null}\n\n"
+        f"Input updates JSON:\n{serialized}"
+    )
+
+def extract_json_array_block(text: str) -> Optional[list[Any]]:
+    if not text:
+        return None
+
+    code_block_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", text, flags=re.IGNORECASE)
+    candidate = code_block_match.group(1) if code_block_match else text
+
+    first_idx = candidate.find("[")
+    last_idx = candidate.rfind("]")
+    if first_idx == -1 or last_idx == -1 or last_idx <= first_idx:
+        return None
+
+    raw_json = candidate[first_idx:last_idx + 1]
+    try:
+        parsed = json.loads(raw_json)
+        if isinstance(parsed, list):
+            return parsed
+    except Exception:
+        return None
+    return None
+
+def normalize_optimized_updates(
+    original_updates: list[dict[str, Any]], candidate_updates: list[Any]
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for idx, original in enumerate(original_updates):
+        candidate = candidate_updates[idx] if idx < len(candidate_updates) and isinstance(candidate_updates[idx], dict) else {}
+        project_name = str(candidate.get("project_name") or original.get("project_name") or "").strip()
+        work_notes = str(candidate.get("work_notes") or original.get("work_notes") or "").strip()
+        next_steps_raw = candidate.get("next_steps")
+        blockers_raw = candidate.get("blockers")
+        image_url_raw = candidate.get("image_url")
+
+        next_steps = (str(next_steps_raw).strip() if next_steps_raw not in (None, "") else None)
+        blockers = (str(blockers_raw).strip() if blockers_raw not in (None, "") else None)
+        image_url = (str(image_url_raw).strip() if image_url_raw not in (None, "") else None)
+
+        normalized.append(
+            {
+                "project_name": project_name or str(original.get("project_name") or "").strip(),
+                "work_notes": work_notes or str(original.get("work_notes") or "").strip(),
+                "next_steps": next_steps if next_steps is not None else original.get("next_steps"),
+                "blockers": blockers if blockers is not None else original.get("blockers"),
+                "image_url": image_url if image_url is not None else original.get("image_url"),
+            }
+        )
+    return normalized
+
+def build_preview_line(updates: list[dict[str, Any]]) -> str:
+    first_project = next((u.get("project_name") for u in updates if u.get("project_name")), "latest priorities")
+    blockers = sum(1 for u in updates if u.get("blockers"))
+    next_steps = sum(1 for u in updates if u.get("next_steps"))
+    return f"Refined {len(updates)} project updates around {first_project} with {next_steps} next-step cues and {blockers} blockers captured."
+
+async def try_gemini_optimize(updates: list[dict[str, Any]], style: str) -> list[dict[str, Any]]:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("No Gemini Key")
+    prompt = build_optimize_prompt(updates, style)
+    model_candidates = [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]
+    for model_name in model_candidates:
+        if not model_name:
+            continue
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = await model.generate_content_async(
+                contents=[prompt],
+                generation_config={"temperature": 0.2},
+            )
+            candidate = extract_json_array_block(response.text or "")
+            if candidate is not None:
+                return normalize_optimized_updates(updates, candidate)
+        except Exception as e:
+            logger.warning("Gemini optimize model %s failed: %s", model_name, e)
+    raise RuntimeError("All Gemini optimize models failed")
+
+async def try_groq_optimize(updates: list[dict[str, Any]], style: str) -> list[dict[str, Any]]:
+    if not groq_client:
+        raise RuntimeError("No Groq Client")
+    prompt = build_optimize_prompt(updates, style)
+    model_candidates = [GROQ_MODEL, GROQ_FALLBACK_MODEL]
+    for model_name in model_candidates:
+        if not model_name:
+            continue
+        try:
+            completion = await groq_client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
+            content = completion.choices[0].message.content or ""
+            candidate = extract_json_array_block(content)
+            if candidate is not None:
+                return normalize_optimized_updates(updates, candidate)
+        except Exception as e:
+            logger.warning("Groq optimize model %s failed: %s", model_name, e)
+    raise RuntimeError("All Groq optimize models failed")
+
+def fallback_optimize_updates(updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    fallback: list[dict[str, Any]] = []
+    for update in updates:
+        work_notes = " ".join(str(update.get("work_notes") or "").split())
+        next_steps = " ".join(str(update.get("next_steps") or "").split()) if update.get("next_steps") else None
+        blockers = " ".join(str(update.get("blockers") or "").split()) if update.get("blockers") else None
+        fallback.append(
+            {
+                "project_name": str(update.get("project_name") or "").strip(),
+                "work_notes": work_notes,
+                "next_steps": next_steps,
+                "blockers": blockers,
+                "image_url": update.get("image_url"),
+            }
+        )
+    return fallback
+
+async def optimize_updates(updates: list[dict[str, Any]], style: str) -> tuple[list[dict[str, Any]], str]:
+    for name, call in [("gemini", try_gemini_optimize), ("groq", try_groq_optimize)]:
+        try:
+            refined = await call(updates, style)
+            if refined:
+                return refined, name
+        except Exception as e:
+            logger.warning("%s optimize failed: %s", name, e)
+    return fallback_optimize_updates(updates), "fallback"
+
 # --- ROUTES ---
 
 @app.get("/api/backend/health")
@@ -325,6 +487,17 @@ async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(ge
     }
     resp = await run_in_threadpool(supabase.table("daily_reports").insert(payload).execute)
     return SubmitReportResponse(message="Created", report=DailyReportRecord(**resp.data[0]), provider=provider)
+
+@app.post("/api/backend/optimize-updates", response_model=OptimizeUpdatesResponse)
+async def optimize_report_updates(request: OptimizeUpdatesRequest, user: Any = Depends(get_current_user)):
+    updates_dicts = [u.model_dump() for u in request.updates]
+    refined_updates, provider = await optimize_updates(updates_dicts, (request.style or "executive").strip().lower())
+    return OptimizeUpdatesResponse(
+        message="Optimized",
+        provider=provider,
+        updates=[ProjectUpdate(**u) for u in refined_updates],
+        preview=build_preview_line(refined_updates),
+    )
 
 @app.get("/api/backend/posts", response_model=list[PostRecord])
 async def get_posts_feed(user: Any = Depends(get_current_user)):
