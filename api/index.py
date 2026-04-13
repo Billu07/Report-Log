@@ -3,7 +3,7 @@ import logging
 import httpx
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
@@ -143,6 +143,18 @@ class CreateCommentRequest(BaseModel):
 
 class CreateReactionRequest(BaseModel):
     emoji: str
+
+class NotificationRecord(BaseModel):
+    id: str
+    type: str
+    created_at: datetime
+    actor_email: Optional[str] = None
+    actor_name: Optional[str] = None
+    actor_avatar: Optional[str] = None
+    post_id: Optional[str] = None
+    comment_id: Optional[str] = None
+    title: str
+    body: str
 
 # --- AUTH DEPENDENCY ---
 
@@ -426,6 +438,22 @@ async def optimize_updates(updates: list[dict[str, Any]], style: str) -> tuple[l
             logger.warning("%s optimize failed: %s", name, e)
     return fallback_optimize_updates(updates), "fallback"
 
+def parse_datetime_value(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        candidate = value.strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except Exception:
+            return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc)
+
+def contains_mention(text: str, mention_tokens: list[str]) -> bool:
+    content = (text or "").lower()
+    return any(token in content for token in mention_tokens)
+
 # --- ROUTES ---
 
 @app.get("/api/backend/health")
@@ -509,6 +537,199 @@ async def optimize_report_updates(request: OptimizeUpdatesRequest, user: Any = D
         updates=[ProjectUpdate(**u) for u in refined_updates],
         preview=build_preview_line(refined_updates),
     )
+
+@app.get("/api/backend/notifications", response_model=list[NotificationRecord])
+async def get_notifications(user: Any = Depends(get_current_user)):
+    user_email = (user.email or "").lower()
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Email not found in token")
+
+    profile_resp = await run_in_threadpool(
+        supabase.table("profiles").select("full_name").eq("user_email", user_email).execute
+    )
+    full_name = (profile_resp.data[0]["full_name"] if profile_resp.data else "") or ""
+    username = user_email.split("@")[0]
+    mention_tokens = [f"@{username.lower()}"]
+    if full_name:
+        mention_tokens.append(f"@{full_name.lower()}")
+
+    posts_resp = await run_in_threadpool(
+        supabase.table("posts").select("*").order("created_at", desc=True).limit(240).execute
+    )
+    posts = posts_resp.data or []
+    if not posts:
+        return []
+
+    post_ids = [p["id"] for p in posts]
+    comments_resp = await run_in_threadpool(
+        supabase.table("comments").select("*").in_("post_id", post_ids).order("created_at", desc=True).limit(500).execute
+    )
+    comments = comments_resp.data or []
+    comment_ids = [c["id"] for c in comments]
+
+    reactions_query = supabase.table("reactions").select("*")
+    if comment_ids:
+        reactions_query = reactions_query.or_(
+            f"post_id.in.({','.join(post_ids)}),comment_id.in.({','.join(comment_ids)})"
+        )
+    else:
+        reactions_query = reactions_query.in_("post_id", post_ids)
+    reactions_resp = await run_in_threadpool(reactions_query.execute)
+    reactions = reactions_resp.data or []
+
+    actor_emails = set()
+    for p in posts:
+        if p.get("author_email"):
+            actor_emails.add(p["author_email"])
+    for c in comments:
+        if c.get("author_email"):
+            actor_emails.add(c["author_email"])
+    for r in reactions:
+        if r.get("author_email"):
+            actor_emails.add(r["author_email"])
+
+    profiles_map: dict[str, dict[str, Any]] = {}
+    if actor_emails:
+        actor_profiles_resp = await run_in_threadpool(
+            supabase.table("profiles").select("*").in_("user_email", list(actor_emails)).execute
+        )
+        profiles_map = {p["user_email"]: p for p in actor_profiles_resp.data or []}
+
+    post_by_id = {p["id"]: p for p in posts}
+    comments_by_id = {c["id"]: c for c in comments}
+    user_post_ids = {p["id"] for p in posts if (p.get("author_email") or "").lower() == user_email}
+    user_comment_ids = {c["id"] for c in comments if (c.get("author_email") or "").lower() == user_email}
+
+    notifications: list[NotificationRecord] = []
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+    def actor_info(email: str) -> tuple[str, Optional[str]]:
+        profile = profiles_map.get(email or "")
+        if profile:
+            return profile.get("full_name") or email, profile.get("avatar_url")
+        return email or "Teammate", None
+
+    def append_notification(
+        *,
+        kind: str,
+        created_at: datetime,
+        actor_email: str,
+        post_id: Optional[str],
+        comment_id: Optional[str],
+        title: str,
+        body: str,
+    ) -> None:
+        if created_at < seven_days_ago:
+            return
+        actor_name, actor_avatar = actor_info(actor_email)
+        notif_id = f"{kind}:{post_id or ''}:{comment_id or ''}:{actor_email}:{int(created_at.timestamp())}"
+        notifications.append(
+            NotificationRecord(
+                id=notif_id,
+                type=kind,
+                created_at=created_at,
+                actor_email=actor_email,
+                actor_name=actor_name,
+                actor_avatar=actor_avatar,
+                post_id=post_id,
+                comment_id=comment_id,
+                title=title,
+                body=body,
+            )
+        )
+
+    for post in posts:
+        post_author = (post.get("author_email") or "").lower()
+        if not post_author or post_author == user_email:
+            continue
+        post_created = parse_datetime_value(post.get("created_at"))
+        post_content = str(post.get("content") or "")
+
+        append_notification(
+            kind="new_post",
+            created_at=post_created,
+            actor_email=post_author,
+            post_id=post.get("id"),
+            comment_id=None,
+            title="New Team Post",
+            body=(post_content[:140] + "...") if len(post_content) > 140 else post_content or "New update posted.",
+        )
+
+        if contains_mention(post_content, mention_tokens):
+            append_notification(
+                kind="mention_post",
+                created_at=post_created,
+                actor_email=post_author,
+                post_id=post.get("id"),
+                comment_id=None,
+                title="You Were Mentioned",
+                body=(post_content[:140] + "...") if len(post_content) > 140 else post_content,
+            )
+
+    for comment in comments:
+        comment_author = (comment.get("author_email") or "").lower()
+        if not comment_author or comment_author == user_email:
+            continue
+        comment_created = parse_datetime_value(comment.get("created_at"))
+        comment_content = str(comment.get("content") or "")
+        parent_post_id = comment.get("post_id")
+
+        if parent_post_id in user_post_ids:
+            append_notification(
+                kind="comment_post",
+                created_at=comment_created,
+                actor_email=comment_author,
+                post_id=parent_post_id,
+                comment_id=comment.get("id"),
+                title="New Comment On Your Post",
+                body=(comment_content[:140] + "...") if len(comment_content) > 140 else comment_content or "Someone commented on your post.",
+            )
+
+        if contains_mention(comment_content, mention_tokens):
+            append_notification(
+                kind="mention_comment",
+                created_at=comment_created,
+                actor_email=comment_author,
+                post_id=parent_post_id,
+                comment_id=comment.get("id"),
+                title="You Were Mentioned In A Comment",
+                body=(comment_content[:140] + "...") if len(comment_content) > 140 else comment_content,
+            )
+
+    for reaction in reactions:
+        reaction_author = (reaction.get("author_email") or "").lower()
+        if not reaction_author or reaction_author == user_email:
+            continue
+        reaction_created = parse_datetime_value(reaction.get("created_at"))
+        reaction_emoji = str(reaction.get("emoji") or "👍")
+        reaction_post_id = reaction.get("post_id")
+        reaction_comment_id = reaction.get("comment_id")
+
+        if reaction_post_id and reaction_post_id in user_post_ids:
+            append_notification(
+                kind="reaction_post",
+                created_at=reaction_created,
+                actor_email=reaction_author,
+                post_id=reaction_post_id,
+                comment_id=None,
+                title=f"Reaction On Your Post {reaction_emoji}",
+                body="A teammate reacted to your post.",
+            )
+
+        if reaction_comment_id and reaction_comment_id in user_comment_ids:
+            parent_post_id = comments_by_id.get(reaction_comment_id, {}).get("post_id")
+            append_notification(
+                kind="reaction_comment",
+                created_at=reaction_created,
+                actor_email=reaction_author,
+                post_id=parent_post_id,
+                comment_id=reaction_comment_id,
+                title=f"Reaction On Your Comment {reaction_emoji}",
+                body="A teammate reacted to your comment.",
+            )
+
+    notifications.sort(key=lambda n: n.created_at, reverse=True)
+    return notifications[:120]
 
 @app.get("/api/backend/posts", response_model=list[PostRecord])
 async def get_posts_feed(user: Any = Depends(get_current_user)):

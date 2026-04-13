@@ -36,6 +36,7 @@ import {
   Send,
   Command,
   Sparkles,
+  Bell,
   Heart,
   Rocket,
   Flame,
@@ -130,6 +131,19 @@ type OptimizeUpdatesResponse = {
   }>;
 };
 
+type NotificationItem = {
+  id: string;
+  type: string;
+  created_at: string;
+  actor_email?: string | null;
+  actor_name?: string | null;
+  actor_avatar?: string | null;
+  post_id?: string | null;
+  comment_id?: string | null;
+  title: string;
+  body: string;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/backend";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -158,6 +172,7 @@ const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
 ]);
 const FEED_DRAFT_KEY_PREFIX = "autolinium:feed-draft:";
 const FEED_PLAYBOOK_KEY_PREFIX = "autolinium:feed-playbooks:";
+const NOTIFICATIONS_SEEN_KEY_PREFIX = "autolinium:notifications-seen:";
 const WIN_SIGNAL_KEYWORDS = [
   "delivered",
   "launched",
@@ -646,6 +661,11 @@ export default function Dashboard() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const [commandFocusedIndex, setCommandFocusedIndex] = useState(0);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  const [notificationsLastSeenAt, setNotificationsLastSeenAt] = useState<number>(0);
+  const [focusedPostId, setFocusedPostId] = useState<string | null>(null);
 
   const { startUpload } = useUploadThing("imageUploader");
 
@@ -754,6 +774,24 @@ export default function Dashboard() {
     const email = session?.user?.email?.toLowerCase();
     if (!email) return null;
     return `${FEED_PLAYBOOK_KEY_PREFIX}${email}`;
+  }
+
+  function getNotificationsSeenStorageKey() {
+    const email = session?.user?.email?.toLowerCase();
+    if (!email) return null;
+    return `${NOTIFICATIONS_SEEN_KEY_PREFIX}${email}`;
+  }
+
+  function markNotificationsAsSeen() {
+    const now = Date.now();
+    setNotificationsLastSeenAt(now);
+    const key = getNotificationsSeenStorageKey();
+    if (!key) return;
+    try {
+      localStorage.setItem(key, String(now));
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   function applyFeedTemplate(templateText: string) {
@@ -872,6 +910,7 @@ export default function Dashboard() {
     setSelectedReport(null);
     setSelectedAuthor(null);
     setViewingPost(null);
+    setIsNotificationsOpen(false);
     setIsComposing(false);
   }
 
@@ -961,6 +1000,18 @@ export default function Dashboard() {
     );
   }
 
+  async function fetchNotificationsNow(currentSession: Session) {
+    try {
+      setIsLoadingNotifications(true);
+      const data = await fetchWithAuth(`${API_BASE_URL}/notifications`, { cache: "no-store" }, currentSession.access_token);
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  }
+
   // Load Session
   useEffect(() => {
     setMounted(true);
@@ -989,13 +1040,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!mounted) return;
-    const shouldLockScroll = Boolean(viewingImage || viewingProfile || viewingPost || isCommandPaletteOpen);
+    const shouldLockScroll = Boolean(viewingImage || viewingProfile || viewingPost || isCommandPaletteOpen || isNotificationsOpen);
     const previousOverflow = document.body.style.overflow;
     if (shouldLockScroll) document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [mounted, viewingImage, viewingProfile, viewingPost, isCommandPaletteOpen]);
+  }, [mounted, viewingImage, viewingProfile, viewingPost, isCommandPaletteOpen, isNotificationsOpen]);
 
   useEffect(() => {
     setHasLoadedFeedDraft(false);
@@ -1003,6 +1054,10 @@ export default function Dashboard() {
     setPostImage(null);
     setSavedPlaybookPostIds([]);
     setFeedLens("all");
+    setNotifications([]);
+    setNotificationsLastSeenAt(0);
+    setIsNotificationsOpen(false);
+    setFocusedPostId(null);
   }, [session?.user?.email]);
 
   useEffect(() => {
@@ -1068,6 +1123,34 @@ export default function Dashboard() {
       console.error(err);
     }
   }, [mounted, savedPlaybookPostIds, session?.user?.email]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const key = getNotificationsSeenStorageKey();
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      setNotificationsLastSeenAt(raw ? Number(raw) || 0 : 0);
+    } catch (err) {
+      console.error(err);
+      setNotificationsLastSeenAt(0);
+    }
+  }, [mounted, session?.user?.email]);
+
+  useEffect(() => {
+    if (!session) return;
+    void fetchNotificationsNow(session);
+    const intervalId = window.setInterval(() => {
+      void fetchNotificationsNow(session);
+    }, 45000);
+    return () => window.clearInterval(intervalId);
+  }, [session]);
+
+  useEffect(() => {
+    if (!focusedPostId) return;
+    const clearId = window.setTimeout(() => setFocusedPostId(null), 2500);
+    return () => window.clearTimeout(clearId);
+  }, [focusedPostId]);
 
   // Load Data
   useEffect(() => {
@@ -1135,6 +1218,13 @@ export default function Dashboard() {
       subtitle: "Open company feed",
       keywords: "feed company updates posts",
       run: () => openWorkspaceTab("feed"),
+    },
+    {
+      id: "open-notifications",
+      title: "Open Notifications",
+      subtitle: "Review mentions and activity",
+      keywords: "notifications mentions comments reactions",
+      run: openNotificationsCenter,
     },
     {
       id: "go-feed-wins",
@@ -1231,6 +1321,30 @@ export default function Dashboard() {
       console.error(err);
       notify("error", getErrorMessage(err, "Command failed."));
     });
+  }
+
+  function openNotificationsCenter() {
+    setIsNotificationsOpen(true);
+    markNotificationsAsSeen();
+    if (session) void fetchNotificationsNow(session);
+  }
+
+  function handleNotificationClick(notification: NotificationItem) {
+    setIsNotificationsOpen(false);
+    setActiveTab("feed");
+    setSelectedReport(null);
+    setSelectedAuthor(null);
+    setIsComposing(false);
+
+    if (notification.post_id) {
+      setFocusedPostId(notification.post_id);
+      window.setTimeout(() => {
+        const element = document.getElementById(`feed-post-${notification.post_id}`);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 160);
+    }
   }
 
   function handleMonthChange(direction: "previous" | "next") {
@@ -1567,6 +1681,10 @@ export default function Dashboard() {
     : feedLens === "playbooks"
       ? playbookPosts
       : posts;
+  const unreadNotificationsCount = notifications.filter(
+    (notification) => new Date(notification.created_at).getTime() > notificationsLastSeenAt
+  ).length;
+  const latestNotifications = notifications.slice(0, 80);
   const publicProfilePosts = viewingProfile
     ? posts
         .filter((post) => post.author_email === viewingProfile.user_email)
@@ -1884,6 +2002,85 @@ export default function Dashboard() {
         document.body
       )
     : null;
+  const notificationsCenter = mounted && isNotificationsOpen
+    ? createPortal(
+        <div className="fixed inset-0 z-[530] flex items-start justify-center bg-black/48 p-4 pt-20 backdrop-blur-sm sm:p-6 sm:pt-24" onClick={() => setIsNotificationsOpen(false)}>
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.99 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-[0_32px_88px_-34px_rgba(0,0,0,0.62)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Bell size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black tracking-tight">Notifications</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">{unreadNotificationsCount} unread</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { if (session) void fetchNotificationsNow(session); }}
+                  className="rounded-lg border border-[color:var(--border)] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/25 hover:text-primary"
+                >
+                  Refresh
+                </button>
+                <button onClick={() => setIsNotificationsOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-[color:var(--muted-foreground)] transition-all hover:bg-destructive/10 hover:text-destructive">
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[68vh] overflow-y-auto p-3 custom-scrollbar">
+              {isLoadingNotifications ? (
+                <div className="flex justify-center py-16">
+                  <LoadingSpinner className="h-6 w-6" />
+                </div>
+              ) : latestNotifications.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-5 py-12 text-center text-sm italic text-[color:var(--muted-foreground)]">
+                  No notifications yet.
+                </div>
+              ) : (
+                latestNotifications.map((notification) => {
+                  const isUnread = new Date(notification.created_at).getTime() > notificationsLastSeenAt;
+                  const actorAvatar = notification.actor_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(notification.actor_name || "U")}&background=random`;
+                  return (
+                    <button
+                      key={notification.id}
+                      type="button"
+                      onClick={() => handleNotificationClick(notification)}
+                      className={`mb-2 flex w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all ${
+                        isUnread
+                          ? "border-primary/25 bg-primary/10"
+                          : "border-transparent bg-[color:var(--muted)]/35 hover:border-[color:var(--border)]"
+                      }`}
+                    >
+                      <img src={actorAvatar} className="mt-0.5 h-9 w-9 rounded-xl border border-[color:var(--border)] object-cover" alt="" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-sm font-bold tracking-tight">{notification.title}</p>
+                          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+                            {formatDistanceToNow(parseISO(notification.created_at), { addSuffix: true })}
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-[color:var(--muted-foreground)]">{notification.body}</p>
+                        <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-primary">{notification.actor_name || notification.actor_email || "Teammate"}</p>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )
+    : null;
 
   return (
     <div className="flex min-h-screen w-full bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20 lg:h-screen lg:overflow-hidden">
@@ -1984,6 +2181,17 @@ export default function Dashboard() {
           </div>
           
           <div className="flex items-center gap-2.5">
+            <button
+              onClick={openNotificationsCenter}
+              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:text-primary sm:h-11 sm:w-11"
+            >
+              <Bell size={16} />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive px-1.5 py-[2px] text-[9px] font-black leading-none text-white">
+                  {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => setIsCommandPaletteOpen(true)}
               className="flex h-10 items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-xs font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:text-primary sm:h-11 sm:px-4"
@@ -2219,7 +2427,7 @@ export default function Dashboard() {
                       const isMyPost = post.author_email === session.user.email;
                       
                       return (
-                        <div id={`feed-post-${post.id}`} key={post.id} className="group/card card-elevated relative flex flex-col overflow-hidden rounded-[2rem] border-[color:var(--border)]/80 bg-[color:var(--card)]/95 shadow-xl shadow-black/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 dark:border-[#334f78] dark:bg-[#0d1e34]/92 dark:shadow-black/45">
+                        <div id={`feed-post-${post.id}`} key={post.id} className={`group/card card-elevated relative flex flex-col overflow-hidden rounded-[2rem] border-[color:var(--border)]/80 bg-[color:var(--card)]/95 shadow-xl shadow-black/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 dark:border-[#334f78] dark:bg-[#0d1e34]/92 dark:shadow-black/45 ${focusedPostId === post.id ? "ring-2 ring-primary/45 ring-offset-2 ring-offset-[color:var(--background)]" : ""}`}>
                           {/* Post Header */}
                           <div className="flex items-center justify-between px-6 pb-4 pt-6">
                             <div className="flex items-center gap-4">
@@ -2888,6 +3096,7 @@ export default function Dashboard() {
         </div>
       </main>
       {commandPalette}
+      {notificationsCenter}
       {postViewer}
       {attachmentViewer}
     </div>
