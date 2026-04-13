@@ -30,9 +30,11 @@ FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
 CEO_EMAIL = os.getenv("CEO_EMAIL", "").lower()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-pro")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.3-70b-versatile")
 
 # Validate required envs
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
@@ -219,21 +221,40 @@ async def fetch_image_payload(image_url: str) -> Optional[dict[str, Any]]:
 
 async def try_gemini(updates: list[dict[str, Any]]) -> str:
     if not GEMINI_API_KEY: raise RuntimeError("No Gemini Key")
-    model = genai.GenerativeModel(GEMINI_MODEL)
     contents: list[Any] = [build_prompt(updates)]
     for update in updates:
         if update.get('image_url'):
             img = await fetch_image_payload(update['image_url'])
             if img: contents.append(img)
-    response = await model.generate_content_async(contents=contents, generation_config={"temperature": 0.3})
-    return response.text.strip()
+    model_candidates = [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]
+    for model_name in model_candidates:
+        if not model_name:
+            continue
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = await model.generate_content_async(contents=contents, generation_config={"temperature": 0.3})
+            if response.text:
+                return response.text.strip()
+        except Exception as e:
+            logger.warning("Gemini model %s failed: %s", model_name, e)
+    raise RuntimeError("All Gemini models failed")
 
 async def try_groq(updates: list[dict[str, Any]]) -> str:
     if not groq_client: raise RuntimeError("No Groq Client")
-    completion = await groq_client.chat.completions.create(
-        model=GROQ_MODEL, messages=[{"role": "user", "content": build_prompt(updates)}], temperature=0.3
-    )
-    return completion.choices[0].message.content.strip()
+    model_candidates = [GROQ_MODEL, GROQ_FALLBACK_MODEL]
+    for model_name in model_candidates:
+        if not model_name:
+            continue
+        try:
+            completion = await groq_client.chat.completions.create(
+                model=model_name, messages=[{"role": "user", "content": build_prompt(updates)}], temperature=0.3
+            )
+            content = completion.choices[0].message.content
+            if content:
+                return content.strip()
+        except Exception as e:
+            logger.warning("Groq model %s failed: %s", model_name, e)
+    raise RuntimeError("All Groq models failed")
 
 async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
     for name, call in [("gemini", try_gemini), ("groq", try_groq)]:

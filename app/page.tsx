@@ -2,10 +2,11 @@
 "use client";
 
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, formatDistanceToNow } from "date-fns";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient, Session } from "@supabase/supabase-js";
+import Swal from "sweetalert2";
 import {
   LayoutDashboard,
   FileText,
@@ -137,13 +138,25 @@ async function fetchWithAuth(url: string, options: RequestInit = {}, token: stri
 
 // --- UI COMPONENTS ---
 
-function LoadingSpinner({ className = "h-6 w-6" }: { className?: string }) {
+function LoadingSpinner({
+  className = "h-6 w-6",
+  tone = "primary"
+}: {
+  className?: string;
+  tone?: "primary" | "light" | "danger";
+}) {
+  const toneClass =
+    tone === "light"
+      ? "border-white/25 border-t-white"
+      : tone === "danger"
+        ? "border-destructive/25 border-t-destructive"
+        : "border-primary/25 border-t-primary";
   return (
     <div className={className}>
       <motion.div
         animate={{ rotate: 360 }}
         transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-        className="h-full w-full border-2 border-primary/30 border-t-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.3)]"
+        className={cn("h-full w-full rounded-full border-2", toneClass)}
       />
     </div>
   );
@@ -184,7 +197,7 @@ function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: s
         const isSubHeader = line.match(/^\s*-\s\w+:/);
         const isBullet = line.trim().startsWith("-") || line.trim().startsWith("*");
         
-        let content = line.replace(/^[#\-*]+\s*/, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+        const content = line.replace(/^[#\-*]+\s*/, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
 
         if (isHeader) {
           return <h3 key={i} className="mt-8 mb-2 font-heading text-lg font-bold text-primary tracking-tight border-b border-primary/10 pb-2">{content}</h3>;
@@ -306,7 +319,7 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
           {error && <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">{error}</div>}
           {message && <div className="rounded-xl bg-primary/10 border border-primary/20 p-4 text-sm text-primary font-bold">{message}</div>}
           <button type="submit" disabled={isLoading} className="button-primary mt-4 w-full h-12 text-base">
-            {isLoading ? <LoadingSpinner className="h-5 w-5 border-t-white border-white/20" /> : isResetMode ? "Send Recovery Link" : isSignUp ? "Create Account" : "Sign In"}
+            {isLoading ? <LoadingSpinner className="h-5 w-5" tone="light" /> : isResetMode ? "Send Recovery Link" : isSignUp ? "Create Account" : "Sign In"}
           </button>
         </form>
         <div className="mt-8 text-center text-sm text-[color:var(--muted-foreground)]">
@@ -338,6 +351,18 @@ type ProjectUpdateState = {
   uploadedImageUrl: string | null;
 };
 
+function createEmptyUpdate(): ProjectUpdateState {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    projectName: "",
+    workNotes: "",
+    nextSteps: "",
+    blockers: "",
+    selectedImage: null,
+    uploadedImageUrl: null
+  };
+}
+
 export default function Dashboard() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -363,21 +388,79 @@ export default function Dashboard() {
   
   // Compose Report State
   const [reportDate, setReportDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [updates, setUpdates] = useState<ProjectUpdateState[]>([
-    { id: "1", projectName: "", workNotes: "", nextSteps: "", blockers: "", selectedImage: null, uploadedImageUrl: null }
-  ]);
+  const [updates, setUpdates] = useState<ProjectUpdateState[]>(() => [createEmptyUpdate()]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Compose Post State
   const [postContent, setPostContent] = useState("");
   const [postImage, setPostImage] = useState<File | null>(null);
   const [isPosting, setIsPosting] = useState(false);
+  const [commentingPostId, setCommentingPostId] = useState<string | null>(null);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   
   // Profile State
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   const { startUpload } = useUploadThing("imageUploader");
+
+  const toast = Swal.mixin({
+    toast: true,
+    position: "top-end",
+    showConfirmButton: false,
+    timer: 2400,
+    timerProgressBar: true
+  });
+
+  function notify(icon: "success" | "error" | "warning" | "info" | "question", title: string) {
+    void toast.fire({
+      icon,
+      title,
+      background: "var(--card)",
+      color: "var(--foreground)"
+    });
+  }
+
+  async function confirmAction(title: string, text: string) {
+    const result = await Swal.fire({
+      title,
+      text,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Confirm",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+      background: "var(--card)",
+      color: "var(--foreground)",
+      confirmButtonColor: "#dc2626"
+    });
+    return result.isConfirmed;
+  }
+
+  function resetComposer() {
+    setReportDate(format(new Date(), "yyyy-MM-dd"));
+    setUpdates([createEmptyUpdate()]);
+    setIsComposing(false);
+  }
+
+  function applyProfileToLocalState(nextProfile: ProfileRecord) {
+    setProfile(nextProfile);
+    setAllProfiles((prev) =>
+      prev.map((p) => (p.user_email === nextProfile.user_email ? { ...p, ...nextProfile } : p))
+    );
+    setPosts((prev) =>
+      prev.map((post) =>
+        post.author_email === nextProfile.user_email
+          ? {
+              ...post,
+              author_name: nextProfile.full_name,
+              author_avatar: nextProfile.avatar_url ?? post.author_avatar
+            }
+          : post
+      )
+    );
+  }
 
   // Load Session
   useEffect(() => {
@@ -405,18 +488,23 @@ export default function Dashboard() {
     async function loadAll() {
       setIsLoading(true);
       try {
-        const [repData, postData, profData, allProfs] = await Promise.all([
+        const [repData, postData, profData] = await Promise.all([
           fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session!.access_token),
           fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session!.access_token),
-          fetchWithAuth(`${API_BASE_URL}/profiles/me`, {}, session!.access_token),
-          fetchWithAuth(`${API_BASE_URL}/profiles/all`, {}, session!.access_token).catch(() => [])
+          fetchWithAuth(`${API_BASE_URL}/profiles/me`, {}, session!.access_token)
         ]);
         if (!isCancelled) {
           setReports(repData.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
           setPosts(postData);
           setProfile(profData);
-          setAllProfiles(allProfs);
         }
+        void fetchWithAuth(`${API_BASE_URL}/profiles/all`, {}, session!.access_token)
+          .then((allProfs) => {
+            if (!isCancelled) setAllProfiles(allProfs ?? []);
+          })
+          .catch(() => {
+            if (!isCancelled) setAllProfiles([]);
+          });
       } catch (err) { console.error(err); } 
       finally { if (!isCancelled) setIsLoading(false); }
     }
@@ -475,14 +563,17 @@ export default function Dashboard() {
       }, session.access_token);
       const data = await fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session.access_token);
       setReports(data.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
-      setUpdates([{ id: Math.random().toString(), projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }]);
-      setIsComposing(false);
-    } catch (err) { console.error(err); } finally { setIsSubmitting(false); }
+      resetComposer();
+      notify("success", "Briefing generated and saved.");
+    } catch (err) {
+      console.error(err);
+      notify("error", "Unable to save this briefing.");
+    } finally { setIsSubmitting(false); }
   }
 
   async function handlePostSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!session || !postContent.trim()) return;
+    if (!session || (!postContent.trim() && !postImage)) return;
     setIsPosting(true);
     try {
       let finalImageUrl: string | null = null;
@@ -490,47 +581,102 @@ export default function Dashboard() {
         const uploadRes = await startUpload([postImage]);
         if (uploadRes && uploadRes.length > 0) finalImageUrl = uploadRes[0].url;
       }
-      await fetchWithAuth(`${API_BASE_URL}/posts`, {
+      const createdPost = await fetchWithAuth(`${API_BASE_URL}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: postContent.trim(), image_url: finalImageUrl }),
-      }, session.access_token);
-      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
-      setPosts(newPosts);
+      }, session.access_token) as PostRecord;
+      setPosts((prev) => [
+        {
+          ...createdPost,
+          author_name: profile?.full_name || session.user.user_metadata.full_name || session.user.email || "Unknown",
+          author_avatar: profile?.avatar_url ?? undefined,
+          comments: createdPost.comments ?? [],
+          reactions: createdPost.reactions ?? []
+        },
+        ...prev
+      ]);
       setPostContent("");
       setPostImage(null);
-    } catch (err) { console.error(err); } finally { setIsPosting(false); }
+      notify("success", "Post published.");
+    } catch (err) {
+      console.error(err);
+      notify("error", "Post failed to publish.");
+    } finally { setIsPosting(false); }
   }
 
   async function handleDeletePost(postId: string) {
-    if (!session || !confirm("Delete this post?")) return;
+    if (!session) return;
+    const confirmed = await confirmAction("Delete post?", "This action cannot be undone.");
+    if (!confirmed) return;
+    setDeletingPostId(postId);
     try {
       await fetchWithAuth(`${API_BASE_URL}/posts/${postId}`, { method: "DELETE" }, session.access_token);
       setPosts(prev => prev.filter(p => p.id !== postId));
-    } catch (err) { console.error(err); }
+      notify("success", "Post deleted.");
+    } catch (err) {
+      console.error(err);
+      notify("error", "Unable to delete post.");
+    } finally {
+      setDeletingPostId(null);
+    }
   }
 
   async function handleCommentSubmit(postId: string, content: string) {
     if (!session || !content.trim()) return;
+    setCommentingPostId(postId);
     try {
-      await fetchWithAuth(`${API_BASE_URL}/posts/${postId}/comments`, {
+      const createdComment = await fetchWithAuth(`${API_BASE_URL}/posts/${postId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content.trim() }),
-      }, session.access_token);
-      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
-      setPosts(newPosts);
+      }, session.access_token) as CommentRecord;
+      setPosts((prev) =>
+        prev.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                comments: [
+                  ...post.comments,
+                  {
+                    ...createdComment,
+                    author_name: profile?.full_name || session.user.user_metadata.full_name || session.user.email || "Unknown",
+                    author_avatar: profile?.avatar_url ?? undefined,
+                    reactions: createdComment.reactions ?? []
+                  }
+                ]
+              }
+            : post
+        )
+      );
       setReplyingTo(null);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      notify("error", "Unable to add comment.");
+    } finally {
+      setCommentingPostId(null);
+    }
   }
 
   async function handleDeleteComment(postId: string, commentId: string) {
-    if (!session || !confirm("Delete this comment?")) return;
+    if (!session) return;
+    const confirmed = await confirmAction("Delete comment?", "This action cannot be undone.");
+    if (!confirmed) return;
+    setDeletingCommentId(commentId);
     try {
       await fetchWithAuth(`${API_BASE_URL}/comments/${commentId}`, { method: "DELETE" }, session.access_token);
-      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
-      setPosts(newPosts);
-    } catch (err) { console.error(err); }
+      setPosts((prev) =>
+        prev.map((post) =>
+          post.id === postId ? { ...post, comments: post.comments.filter((comment) => comment.id !== commentId) } : post
+        )
+      );
+      notify("success", "Comment deleted.");
+    } catch (err) {
+      console.error(err);
+      notify("error", "Unable to delete comment.");
+    } finally {
+      setDeletingCommentId(null);
+    }
   }
 
   async function handleReaction(id: string, emoji: string, type: "post" | "comment") {
@@ -574,12 +720,9 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emoji }),
       }, session.access_token);
-      
-      // Silent background sync to get real IDs and ensure consistency
-      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
-      setPosts(newPosts);
     } catch (err) { 
       console.error(err);
+      notify("error", "Reaction failed.");
       setPosts(oldPosts); // Revert on error
     }
   }
@@ -596,11 +739,13 @@ export default function Dashboard() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(type === "avatar" ? { avatar_url: url } : { cover_url: url })
         }, session.access_token);
-        setProfile(newProf);
-        const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
-        setPosts(newPosts);
+        applyProfileToLocalState(newProf);
+        notify("success", "Profile image updated.");
       }
-    } catch (err) { console.error(err); } finally { setIsUpdatingProfile(false); }
+    } catch (err) {
+      console.error(err);
+      notify("error", "Image update failed.");
+    } finally { setIsUpdatingProfile(false); }
   }
 
   async function handleProfileUpdate(e: FormEvent, bio: string, name: string) {
@@ -613,10 +758,12 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bio, full_name: name })
       }, session.access_token);
-      setProfile(newProf);
-      const newPosts = await fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session.access_token);
-      setPosts(newPosts);
-    } catch (err) { console.error(err); } finally { setIsUpdatingProfile(false); }
+      applyProfileToLocalState(newProf);
+      notify("success", "Profile updated.");
+    } catch (err) {
+      console.error(err);
+      notify("error", "Profile update failed.");
+    } finally { setIsUpdatingProfile(false); }
   }
 
   function insertMention(postId: string | null, name: string) {
@@ -744,8 +891,8 @@ export default function Dashboard() {
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
-        <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--background)]/80 px-10 backdrop-blur-xl">
+      <main className="relative z-10 flex-1 overflow-y-auto custom-scrollbar scroll-smooth">
+        <header className="sticky top-0 z-40 flex h-20 items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--background)] px-10 shadow-sm backdrop-blur-xl">
           <div className="flex items-center gap-4">
             {selectedReport && (
               <button onClick={() => setSelectedReport(null)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-[color:var(--muted)] transition-colors">
@@ -772,8 +919,8 @@ export default function Dashboard() {
 
             {/* FEED VIEW */}
             {!isLoading && activeTab === "feed" && !isComposing && !selectedReport && (
-              <motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-10 max-w-2xl mx-auto">
-                <div className="card-elevated p-8 rounded-[2rem] border-primary/10 bg-gradient-to-br from-[color:var(--card)]/80 to-[color:var(--muted)]/10 shadow-xl shadow-black/5 backdrop-blur-xl">
+              <motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-3xl flex-col gap-8">
+                <div className="card-elevated rounded-[2rem] border-primary/10 bg-[color:var(--card)]/95 p-7 shadow-xl shadow-black/5 backdrop-blur-xl">
                   <div className="flex gap-5">
                     <img src={userAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
                     <form onSubmit={handlePostSubmit} className="flex-1 flex flex-col gap-5">
@@ -786,7 +933,7 @@ export default function Dashboard() {
                             else if (!e.target.value.includes("@")) setMentionSearch(null);
                           }}
                           placeholder="Share an update or tag a teammate with @..."
-                          className="w-full resize-none bg-transparent outline-none text-lg font-medium text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] min-h-[80px]"
+                          className="min-h-[88px] w-full resize-none bg-transparent text-base font-medium leading-relaxed text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)]"
                         />
                         {mentionSearch === "post" && (
                           <div className="absolute top-full left-0 z-50 mt-2 w-64 bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-2xl shadow-2xl overflow-hidden p-2 flex flex-col gap-1">
@@ -802,7 +949,7 @@ export default function Dashboard() {
                       </div>
                       
                       {postImage && (
-                        <div className="relative rounded-2xl overflow-hidden border border-[color:var(--border)] w-fit group">
+                        <div className="group relative w-fit overflow-hidden rounded-2xl border border-[color:var(--border)]">
                           <button type="button" onClick={() => setPostImage(null)} className="absolute top-2 right-2 z-10 bg-black/60 backdrop-blur-md text-white rounded-full p-1.5 hover:bg-black/80 transition-colors"><X size={14}/></button>
                           <img src={URL.createObjectURL(postImage)} className="h-40 object-cover" alt="Preview" />
                         </div>
@@ -815,25 +962,25 @@ export default function Dashboard() {
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => setPostImage(e.target.files?.[0] ?? null)} />
                         </label>
                         <button type="submit" disabled={isPosting || (!postContent.trim() && !postImage)} className="button-primary h-10 px-6 rounded-xl font-bold tracking-tight">
-                          {isPosting ? <LoadingSpinner className="h-4 w-4" /> : "Post Briefing"}
+                          {isPosting ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Post Briefing"}
                         </button>
                       </div>
                     </form>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-10">
+                <div className="flex flex-col gap-7">
                   {posts.length === 0 ? (
-                    <div className="text-center py-20 px-8 rounded-[2rem] border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] font-medium italic backdrop-blur-sm">No transmissions found in the current sector.</div>
+                    <div className="rounded-[2rem] border border-dashed border-[color:var(--border)] px-8 py-16 text-center font-medium italic text-[color:var(--muted-foreground)] backdrop-blur-sm">No transmissions found in the current sector.</div>
                   ) : (
                     posts.map(post => {
                       const postAvatar = post.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.author_name || "U")}&background=random`;
                       const isMyPost = post.author_email === session.user.email;
                       
                       return (
-                        <div key={post.id} className="card-elevated flex flex-col overflow-hidden rounded-[2rem] border-primary/5 hover:border-primary/20 transition-all duration-500 shadow-xl shadow-black/5 bg-[color:var(--card)]/60 backdrop-blur-xl group/card relative">
+                        <div key={post.id} className="group/card card-elevated relative flex flex-col overflow-hidden rounded-[2rem] border-[color:var(--border)]/80 bg-[color:var(--card)]/95 shadow-xl shadow-black/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25">
                           {/* Post Header */}
-                          <div className="flex items-center justify-between p-6">
+                          <div className="flex items-center justify-between px-6 pb-4 pt-6">
                             <div className="flex items-center gap-4">
                               <button 
                                 onClick={() => {
@@ -842,8 +989,8 @@ export default function Dashboard() {
                                 }}
                                 className="relative group/avatar"
                               >
-                                <img src={postAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5 transition-transform group-hover/avatar:scale-105" alt="" />
-                                <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 border-2 border-[color:var(--card)]" />
+                                <img src={postAvatar} className="h-12 w-12 shrink-0 rounded-2xl border border-[color:var(--border)] object-cover ring-4 ring-primary/5 transition-transform group-hover/avatar:scale-105" alt="" />
+                                <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-[color:var(--card)] bg-emerald-500" />
                               </button>
                               <div className="flex flex-col text-left">
                                 <button 
@@ -855,14 +1002,14 @@ export default function Dashboard() {
                                 >
                                   {post.author_name}
                                 </button>
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-60">
+                                <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--muted-foreground)] opacity-60">
                                   {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
                                 </span>
                               </div>
                             </div>
                             
                             <div className="relative group/menu">
-                              <button className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-primary/10 text-[color:var(--muted-foreground)] hover:text-primary transition-all">
+                              <button className="flex h-10 w-10 items-center justify-center rounded-xl text-[color:var(--muted-foreground)] transition-all hover:bg-primary/10 hover:text-primary">
                                 <MoreHorizontal size={20} />
                               </button>
                               
@@ -870,8 +1017,8 @@ export default function Dashboard() {
                                 <div className="absolute top-0 left-0 right-0 h-2" /> {/* Invisible Bridge */}
                                 <div className="bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-2xl shadow-2xl py-2">
                                   {isMyPost && (
-                                    <button onClick={() => handleDeletePost(post.id)} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-destructive hover:bg-destructive/10 transition-colors">
-                                      <Trash2 size={16} /> Delete Post
+                                    <button onClick={() => handleDeletePost(post.id)} disabled={deletingPostId === post.id} className="flex w-full items-center gap-3 px-4 py-2 text-sm font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60">
+                                      {deletingPostId === post.id ? <LoadingSpinner className="h-4 w-4" tone="danger" /> : <Trash2 size={16} />} Delete Post
                                     </button>
                                   )}
                                   <button className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-[color:var(--foreground)] hover:bg-primary/5 transition-colors text-left">
@@ -886,7 +1033,7 @@ export default function Dashboard() {
                           </div>
                           
                           {/* Post Content */}
-                          <div className="px-6 pb-6 whitespace-pre-wrap text-[color:var(--foreground)] leading-relaxed text-lg font-medium opacity-90">
+                          <div className="whitespace-pre-wrap px-6 pb-5 text-base font-medium leading-relaxed text-[color:var(--foreground)] opacity-90">
                             {post.content.split(/(@[\w\s]+)/g).map((part, i) => 
                               part.startsWith("@") ? <span key={i} className="text-primary font-bold cursor-pointer hover:underline">{part}</span> : part
                             )}
@@ -894,7 +1041,7 @@ export default function Dashboard() {
                           
                           {/* Post Image */}
                           {post.image_url && (
-                            <div className="px-4 pb-4">
+                            <div className="px-5 pb-5">
                               <div className="overflow-hidden rounded-2xl border border-[color:var(--border)] group/img relative">
                                 <img src={post.image_url} className="w-full max-h-[500px] object-cover transition-transform duration-700 group-hover/img:scale-105" alt="" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover/img:opacity-100 transition-opacity" />
@@ -903,8 +1050,8 @@ export default function Dashboard() {
                           )}
                           
                           {/* Post Actions */}
-                          <div className="px-6 py-4 border-t border-[color:var(--border)] bg-black/5 flex items-center justify-between">
-                            <div className="flex flex-wrap gap-2">
+                          <div className="flex items-center justify-between border-t border-[color:var(--border)] bg-[color:var(--muted)]/45 px-6 py-3.5">
+                            <div className="flex flex-wrap gap-1.5">
                               {EMOJI_OPTIONS.map(({ char }) => {
                                 const count = post.reactions.filter(r => r.emoji === char).length;
                                 const isReacted = post.reactions.some(r => r.emoji === char && r.author_email === session.user.email);
@@ -912,7 +1059,7 @@ export default function Dashboard() {
                                 return (
                                   <button 
                                     key={char} onClick={() => handleReaction(post.id, char, "post")}
-                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isReacted ? "bg-primary/10 border-primary/20 text-primary" : "bg-[color:var(--card)] border-[color:var(--border)] text-[color:var(--foreground)]"}`}
+                                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-all ${isReacted ? "border-primary/20 bg-primary/10 text-primary" : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--foreground)]"}`}
                                   >
                                     <span>{char}</span> 
                                     <span>{count}</span>
@@ -921,7 +1068,7 @@ export default function Dashboard() {
                               })}
                               
                               <div className="relative group/react">
-                                <button className="h-9 w-9 flex items-center justify-center rounded-full bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><SmilePlus size={18} /></button>
+                                <button className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white"><SmilePlus size={18} /></button>
                                 <div className="absolute bottom-full left-0 opacity-0 pointer-events-none group-hover/react:opacity-100 group-hover/react:pointer-events-auto transition-all translate-y-2 group-hover/react:translate-y-0 z-50 pb-3">
                                   <div className="bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-full shadow-2xl flex gap-1 p-2">
                                     {EMOJI_OPTIONS.map(({ char }) => (
@@ -933,30 +1080,30 @@ export default function Dashboard() {
                               </div>
                             </div>
                             
-                            <button className="flex items-center gap-2.5 px-4 py-2 rounded-full hover:bg-primary/5 text-[color:var(--muted-foreground)] hover:text-primary transition-all text-xs font-bold uppercase tracking-widest">
+                            <button className="flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)] transition-all hover:bg-primary/5 hover:text-primary">
                               <MessageSquare size={16} /> {post.comments.length} Comments
                             </button>
                           </div>
                           
                           {/* Comments Section */}
-                          <div className="p-6 bg-black/5 flex flex-col gap-6">
+                          <div className="flex flex-col gap-5 bg-[color:var(--card)] px-6 pb-6 pt-5">
                             {post.comments.length > 0 && (
                               <div className="flex flex-col gap-5">
                                 {post.comments.map(comment => {
                                   const commentAvatar = comment.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author_name || "U")}&background=random`;
                                   const isMyComment = comment.author_email === session.user.email;
                                   return (
-                                    <div key={comment.id} className="flex gap-4 group/comment">
-                                      <img src={commentAvatar} className="h-10 w-10 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-2 ring-primary/5" alt="" />
+                                    <div key={comment.id} className="group/comment flex gap-4">
+                                      <img src={commentAvatar} className="h-9 w-9 shrink-0 rounded-xl border border-[color:var(--border)] object-cover ring-2 ring-primary/5" alt="" />
                                       <div className="flex flex-col gap-1 flex-1">
                                         <div className="flex items-center justify-between">
                                           <div className="flex items-center gap-3">
                                             <span className="font-bold text-sm tracking-tight">{comment.author_name}</span>
                                             <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-40">{formatDistanceToNow(parseISO(comment.created_at), { addSuffix: true })}</span>
                                           </div>
-                                          {isMyComment && <button onClick={() => handleDeleteComment(post.id, comment.id)} className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-destructive/10 text-destructive opacity-0 group-hover/comment:opacity-100 transition-all"><Trash2 size={12}/></button>}
+                                          {isMyComment && <button onClick={() => handleDeleteComment(post.id, comment.id)} disabled={deletingCommentId === comment.id} className="flex h-6 w-6 items-center justify-center rounded-lg text-destructive opacity-0 transition-all hover:bg-destructive/10 group-hover/comment:opacity-100 disabled:cursor-not-allowed disabled:opacity-60">{deletingCommentId === comment.id ? <LoadingSpinner className="h-3 w-3" tone="danger" /> : <Trash2 size={12}/>}</button>}
                                         </div>
-                                        <div className="bg-[color:var(--card)] border border-[color:var(--border)] rounded-[1.5rem] rounded-tl-none px-5 py-3 text-base font-medium text-[color:var(--foreground)] opacity-90 shadow-sm">
+                                        <div className="rounded-2xl rounded-tl-none border border-[color:var(--border)] bg-[color:var(--muted)]/40 px-4 py-2.5 text-sm font-medium text-[color:var(--foreground)] opacity-90 shadow-sm">
                                           {comment.content.split(/(@[\w\s]+)/g).map((part, i) => part.startsWith("@") ? <span key={i} className="text-primary font-bold">{part}</span> : part)}
                                         </div>
                                         <div className="flex items-center gap-3 ml-2 mt-1">
@@ -980,15 +1127,15 @@ export default function Dashboard() {
                                 })}
                               </div>
                             )}
-                            <div className="flex gap-4 items-center relative">
-                              <img src={userAvatar} className="h-10 w-10 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-2 ring-primary/5" alt="" />
+                            <div className="relative flex items-center gap-4">
+                              <img src={userAvatar} className="h-9 w-9 shrink-0 rounded-xl border border-[color:var(--border)] object-cover ring-2 ring-primary/5" alt="" />
                               <div className="flex-1 relative">
                                 <form onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement; handleCommentSubmit(post.id, input.value); input.value = ''; }} className="relative flex items-center">
-                                  <input id={`comment-input-${post.id}`} name="comment" type="text" placeholder="Add a comment... type @ to mention" className="w-full h-12 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl px-6 pr-12 text-sm font-semibold outline-none focus:border-primary/30 focus:ring-4 ring-primary/5 transition-all" onChange={(e) => {
+                                  <input id={`comment-input-${post.id}`} name="comment" type="text" disabled={commentingPostId === post.id} placeholder="Add a comment... type @ to mention" className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 pr-12 text-sm font-semibold outline-none ring-primary/5 transition-all focus:border-primary/30 focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60" onChange={(e) => {
                                     if(e.target.value.endsWith("@")) setMentionSearch(post.id);
                                     else if (!e.target.value.includes("@")) setMentionSearch(null);
                                   }} />
-                                  <button type="submit" className="absolute right-3 h-8 w-8 flex items-center justify-center rounded-xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all"><Send size={16} /></button>
+                                  <button type="submit" disabled={commentingPostId === post.id} className="absolute right-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-60">{commentingPostId === post.id ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Send size={15} />}</button>
                                 </form>
                                 {mentionSearch === post.id && (
                                   <div className="absolute bottom-full left-0 z-50 mb-2 w-64 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl shadow-2xl overflow-hidden p-2 flex flex-col gap-1">
@@ -1126,28 +1273,33 @@ export default function Dashboard() {
                     })}
                   </div>
                 ) : (
-                  <div className="card-elevated p-10 rounded-[3rem] border-primary/5 bg-[color:var(--card)]/80 backdrop-blur-xl shadow-2xl">
-                     <div className="mb-10 flex items-center justify-between">
+                  <div className="card-elevated rounded-[2.4rem] border-primary/10 bg-[color:var(--card)] p-8 shadow-2xl">
+                     <div className="mb-8 flex items-center justify-between">
                        <h2 className="font-heading text-3xl font-extrabold tracking-tight">{format(visibleMonth, "MMMM yyyy")}</h2> 
-                       <div className="flex gap-3">
-                         <button onClick={() => handleMonthChange("previous")} className="h-12 w-12 flex items-center justify-center rounded-2xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all shadow-sm"><ChevronLeft size={24} /></button> 
-                         <button onClick={() => handleMonthChange("next")} className="h-12 w-12 flex items-center justify-center rounded-2xl bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all shadow-sm"><ChevronRight size={24} /></button>
+                       <div className="flex gap-2.5">
+                         <button onClick={() => handleMonthChange("previous")} className="flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white"><ChevronLeft size={20} /></button> 
+                         <button onClick={() => handleMonthChange("next")} className="flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white"><ChevronRight size={20} /></button>
                        </div>
                      </div>
-                     <div className="mb-4 grid grid-cols-7 gap-4 text-center text-[10px] font-black uppercase tracking-[0.3em] text-primary opacity-40">
-                       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => <div key={dayName} className="py-2">{dayName}</div>)}
+                     <div className="mb-3 grid grid-cols-7 gap-3 text-center text-[10px] font-black uppercase tracking-[0.22em] text-primary/60">
+                       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => <div key={dayName} className="py-1">{dayName}</div>)}
                      </div>
-                    <div className="grid grid-cols-7 gap-4">
+                    <div className="grid grid-cols-7 gap-3">
                       {eachDayOfInterval({ start: startOfWeek(startOfMonth(visibleMonth), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(visibleMonth), { weekStartsOn: 1 }) }).map((day) => {
                         const dayReports = reportsToShow.filter((r) => isSameDay(parseISO(r.report_date), day));
                         const current = isSameMonth(day, visibleMonth);
                         const isToday = isSameDay(day, new Date());
                         return (
-                           <div key={day.toISOString()} className={`flex min-h-[120px] flex-col p-4 rounded-[1.5rem] border-2 transition-all duration-500 ${!current ? "opacity-10 border-transparent" : isToday ? "border-primary/20 bg-primary/5" : "border-[color:var(--border)] bg-black/5"} ${dayReports.length > 0 ? "hover:border-primary/40 hover:bg-primary/5 hover:-translate-y-1 shadow-sm" : ""}`}>
-                             <span className={`text-sm font-black tracking-tighter ${dayReports.length > 0 ? "text-primary" : "text-[color:var(--muted-foreground)] opacity-40"} ${isToday ? "scale-125 origin-left" : ""}`}>{format(day, "d")}</span>
-                             <div className="mt-3 flex flex-col gap-2">
+                           <div key={day.toISOString()} className={`flex min-h-[128px] flex-col rounded-[1.25rem] border p-3 transition-all duration-300 ${!current ? "border-transparent opacity-20" : isToday ? "border-primary/30 bg-primary/10 shadow-sm shadow-primary/10" : "border-[color:var(--border)] bg-[color:var(--muted)]/35"} ${dayReports.length > 0 ? "hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary/5" : ""}`}>
+                             <div className="mb-2 flex items-center justify-between">
+                               <span className={`text-sm font-black tracking-tight ${dayReports.length > 0 ? "text-primary" : "text-[color:var(--muted-foreground)] opacity-50"} ${isToday ? "scale-110 origin-left" : ""}`}>{format(day, "d")}</span>
+                               {dayReports.length > 0 && (
+                                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">{dayReports.length}</span>
+                               )}
+                             </div>
+                             <div className="mt-1 flex flex-col gap-1.5">
                                {dayReports.map((r, idx) => (
-                                 <button key={idx} onClick={() => setSelectedReport(r)} className="w-full truncate rounded-xl bg-[color:var(--card)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--foreground)] shadow-sm hover:ring-2 ring-primary/30 transition-all border border-[color:var(--border)]">{selectedAuthor ? r.formatted_report.substring(0,12) : r.author_name}</button>
+                                 <button key={idx} onClick={() => setSelectedReport(r)} className="w-full truncate rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[color:var(--foreground)] transition-all hover:border-primary/30 hover:text-primary">{selectedAuthor ? r.formatted_report.substring(0, 14) : r.author_name}</button>
                                ))}
                              </div>
                            </div>
@@ -1161,13 +1313,14 @@ export default function Dashboard() {
 
             {/* COMPOSE REPORT */}
              {!isLoading && isComposing && (
-               <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+               <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={resetComposer}>
                  <motion.div 
                    key="compose" 
                    initial={{ opacity: 0, scale: 0.95 }} 
                    animate={{ opacity: 1, scale: 1 }} 
                    exit={{ opacity: 0, scale: 0.95 }} 
                    className="bg-[color:var(--card)] border border-[color:var(--border)] w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+                   onClick={(e) => e.stopPropagation()}
                  >
                   <header className="flex items-center justify-between px-6 py-4 border-b border-[color:var(--border)] bg-[color:var(--muted)]/30">
                     <div className="flex items-center gap-3">
@@ -1176,12 +1329,12 @@ export default function Dashboard() {
                       </div>
                       <h3 className="text-base font-bold text-[color:var(--foreground)]">New Briefing</h3>
                     </div>
-                    <button onClick={() => setIsComposing(false)} className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">
+                    <button onClick={resetComposer} className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">
                       <X size={20} />
                     </button>
                   </header>
 
-                  <form onSubmit={handleReportSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
+                  <form id="briefing-entry-form" onSubmit={handleReportSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
                     <div className="flex flex-col gap-2">
                       <label className="text-xs font-bold text-[color:var(--muted-foreground)] uppercase tracking-wider">Report Date</label>
                       <input required type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--input)] text-sm font-medium focus:ring-2 ring-primary/20 outline-none transition-all" />
@@ -1240,7 +1393,7 @@ export default function Dashboard() {
 
                       <button 
                         type="button" 
-                        onClick={() => setUpdates(prev => [...prev, { id: Math.random().toString(), projectName: "", workNotes: "", selectedImage: null, uploadedImageUrl: null }])} 
+                        onClick={() => setUpdates((prev) => [...prev, createEmptyUpdate()])} 
                         className="w-full py-2 flex items-center justify-center gap-2 text-xs font-bold text-primary hover:bg-primary/5 border border-dashed border-primary/20 rounded-lg transition-all"
                       >
                         <Plus size={14} strokeWidth={3} /> Add Project
@@ -1249,9 +1402,9 @@ export default function Dashboard() {
                   </form>
 
                   <footer className="px-6 py-4 border-t border-[color:var(--border)] bg-[color:var(--muted)]/30 flex items-center justify-end gap-3">
-                    <button type="button" onClick={() => setIsComposing(false)} className="px-4 py-2 text-sm font-bold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">Cancel</button>
-                    <button type="submit" onClick={() => (document.querySelector('form') as HTMLFormElement).requestSubmit()} disabled={isSubmitting || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary px-5 py-2 h-9 rounded-lg text-xs font-bold uppercase tracking-wider">
-                      {isSubmitting ? <LoadingSpinner className="h-4 w-4 border-t-white border-white/20" /> : "Save Briefing"}
+                    <button type="button" onClick={resetComposer} className="px-4 py-2 text-sm font-bold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">Cancel</button>
+                    <button type="submit" form="briefing-entry-form" disabled={isSubmitting || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary px-5 py-2 h-9 rounded-lg text-xs font-bold uppercase tracking-wider">
+                      {isSubmitting ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Save Briefing"}
                     </button>
                   </footer>
                  </motion.div>
@@ -1264,7 +1417,7 @@ export default function Dashboard() {
               const reportAvatar = authorProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedReport.author_name)}&background=random&size=48&bold=true`;
               
               return (
-                <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-4xl flex-col gap-10">
+                <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex max-w-4xl flex-col gap-10 pb-6">
                   <div className="card-elevated p-12 md:p-16 rounded-[3.5rem] border-primary/5 shadow-2xl bg-gradient-to-br from-[color:var(--card)] to-transparent">
                     <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
                       <div>

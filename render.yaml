@@ -16,13 +16,16 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-1.5-pro
+        value: gemini-3.1-pro-preview
+      - key: GEMINI_FALLBACK_MODEL
+        value: gemini-2.5-pro
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_FALLBACK_MODEL
         value: llama-3.3-70b-versatile
       - key: HUGGINGFACE_API_KEY
         sync: false
       - key: HUGGINGFACE_MODEL
         value: mistralai/Mixtral-8x7B-Instruct-v0.1
-
