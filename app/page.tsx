@@ -1221,43 +1221,36 @@ export default function Dashboard() {
             {/* SLEEK GALLERY MODAL */}
             <AnimatePresence>
               {viewingImage && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 md:p-12 bg-black/80 backdrop-blur-md">
                   <motion.div 
-                    initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-                    animate={{ opacity: 1, scale: 1, y: 0 }} 
-                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="relative w-full max-w-4xl bg-[color:var(--card)] rounded-[2.5rem] border border-primary/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col"
+                    initial={{ opacity: 0, scale: 0.98 }} 
+                    animate={{ opacity: 1, scale: 1 }} 
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    className="relative w-full max-w-5xl bg-[color:var(--card)] rounded-[2rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {/* Modal Header */}
-                    <div className="flex items-center justify-between px-8 py-5 border-b border-[color:var(--border)] bg-[color:var(--muted)]/20">
+                    <div className="flex items-center justify-between px-8 py-4 border-b border-[color:var(--border)] bg-[color:var(--muted)]/10">
                       <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                          <ImageIcon size={18} />
-                        </div>
-                        <span className="text-xs font-black uppercase tracking-[0.2em] text-primary">Visual Attachment</span>
+                        <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)]">System Attachment</span>
                       </div>
                       <button 
                         onClick={() => setViewingImage(null)}
-                        className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-destructive/10 hover:text-destructive transition-all text-[color:var(--muted-foreground)]"
+                        className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-destructive/10 hover:text-destructive transition-all text-[color:var(--muted-foreground)]"
                       >
-                        <X size={20} />
+                        <X size={18} />
                       </button>
                     </div>
 
-                    {/* Image Canvas */}
-                    <div className="p-4 bg-black/5 flex items-center justify-center min-h-[300px] max-h-[70vh]">
-                      <img 
-                        src={viewingImage} 
-                        alt="Attachment" 
-                        className="max-w-full max-h-full object-contain rounded-xl shadow-lg border border-[color:var(--border)]"
-                      />
-                    </div>
-
-                    {/* Modal Footer */}
-                    <div className="px-8 py-4 border-t border-[color:var(--border)] bg-[color:var(--muted)]/10 flex items-center justify-center">
-                      <div className="px-4 py-1.5 rounded-full bg-primary/5 border border-primary/10 text-[9px] font-black uppercase tracking-[0.3em] text-primary/60">
-                        Operational Visual Proof
+                    {/* Image Canvas with Padding */}
+                    <div className="p-8 bg-black/20 flex items-center justify-center min-h-[400px] max-h-[75vh]">
+                      <div className="relative w-full h-full flex items-center justify-center">
+                        <img 
+                          src={viewingImage} 
+                          alt="Attachment" 
+                          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                        />
                       </div>
                     </div>
                   </motion.div>
