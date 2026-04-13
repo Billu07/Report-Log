@@ -58,6 +58,15 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function normalizeCompletionPercent(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim().replace("%", "");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(100, Math.max(0, Math.round(parsed)));
+}
+
 // --- TYPES ---
 type ReportRecord = {
   id: string;
@@ -128,7 +137,17 @@ type OptimizeUpdatesResponse = {
     next_steps?: string | null;
     blockers?: string | null;
     image_url?: string | null;
+    completion_percent?: number | null;
   }>;
+};
+
+type ReportUpdateEntry = {
+  project_name: string;
+  work_notes: string;
+  next_steps?: string | null;
+  blockers?: string | null;
+  image_url?: string | null;
+  completion_percent?: number | null;
 };
 
 type NotificationItem = {
@@ -385,63 +404,74 @@ function LoadingRail({ label }: { label: string }) {
 function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: string) => void }) {
   const lines = text.split("\n");
   return (
-    <div className="flex flex-col gap-5 text-[color:var(--foreground)] font-sans antialiased">
+    <div className="flex flex-col gap-4 text-[color:var(--foreground)] font-sans antialiased">
       {lines.map((line, i) => {
         if (!line.trim()) return null;
-        
-        // Image Handling (Sleek Folder Wizard)
+
         const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
         if (imageMatch) {
           return (
-            <div key={i} className="my-6">
+            <div key={i} className="my-3">
               <button 
                 onClick={() => onViewImage(imageMatch[1])}
-                className="inline-flex items-center gap-3 px-5 py-3 rounded-2xl border border-[color:var(--border)] bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all group shadow-sm hover:shadow-primary/10"
+                className="inline-flex items-center gap-2.5 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-primary transition-colors hover:bg-primary/20"
               >
-                <div className="relative">
-                  {/* High-end Retro Folder SVG */}
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="transition-transform group-hover:scale-110">
-                    <path d="M2 7C2 5.89543 2.89543 5 4 5H9L11 7H20C21.1046 7 22 7.89543 22 9V18C22 19.1046 21.1046 20 20 20H4C2.89543 20 2 19.1046 2 18V7Z" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-                    <path d="M2 10H22" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-                    <path d="M5 8V6C5 5.44772 5.44772 5 6 5H8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  </svg>
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em]">View Attachment</span>
+                <ImageIcon size={13} />
+                View Attachment
               </button>
             </div>
           );
         }
 
-        // Professional Typography Logic
         const isHeader = line.startsWith("#") || line.match(/^\d\.\s/);
         const isSubHeader = line.match(/^\s*-\s\w+:/);
         const isBullet = line.trim().startsWith("-") || line.trim().startsWith("*");
-        
+
         const content = line.replace(/^[#\-*]+\s*/, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
 
         if (isHeader) {
-          return <h3 key={i} className="mt-8 mb-2 font-heading text-lg font-bold text-primary tracking-tight border-b border-primary/10 pb-2">{content}</h3>;
+          return <h3 key={i} className="mt-4 border-b border-primary/15 pb-2 font-heading text-base font-black tracking-tight text-primary sm:text-lg">{content}</h3>;
         }
 
         if (isSubHeader) {
           const [label, ...rest] = content.split(":");
+          const normalizedLabel = label.trim().toLowerCase();
+          const value = rest.join(":").trim();
+
+          if (normalizedLabel === "completion") {
+            const completion = normalizeCompletionPercent(value);
+            return (
+              <div key={i} className="rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5 dark:bg-primary/10">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Completion</span>
+                  <span className="text-xs font-black text-[color:var(--foreground)]">{completion !== null ? `${completion}%` : value}</span>
+                </div>
+                {completion !== null && (
+                  <div className="h-1.5 overflow-hidden rounded-full bg-primary/15 dark:bg-primary/25">
+                    <div className="h-full rounded-full bg-gradient-to-r from-primary/55 to-primary" style={{ width: `${completion}%` }} />
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           return (
-            <div key={i} className="mt-3 flex items-start gap-2">
-              <span className="text-[11px] font-black uppercase tracking-wider text-primary mt-1 min-w-[100px] shrink-0">{label.trim()}</span>
-              <span className="text-sm font-medium text-[color:var(--foreground)] opacity-90 leading-relaxed">{rest.join(":").trim()}</span>
+            <div key={i} className="grid gap-1 rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/25 px-3 py-2.5 dark:border-[#355279] dark:bg-[#122e4b]/70 sm:grid-cols-[130px_1fr] sm:items-start sm:gap-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-primary">{label.trim()}</span>
+              <span className="text-sm font-medium leading-relaxed text-[color:var(--foreground)]">{value}</span>
             </div>
           );
         }
 
         if (isBullet) {
           return (
-            <div key={i} className="relative pl-6 text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] before:absolute before:left-0 before:top-2.5 before:h-[5px] before:w-[5px] before:rounded-full before:bg-primary/30">
+            <div key={i} className="relative pl-5 text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] before:absolute before:left-0 before:top-2.5 before:h-1.5 before:w-1.5 before:rounded-full before:bg-primary/40">
               {content}
             </div>
           );
         }
 
-        return <p key={i} className="text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] opacity-90">{content}</p>;
+        return <p key={i} className="text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)]">{content}</p>;
       })}
     </div>
   );
@@ -578,6 +608,7 @@ type ProjectUpdateState = {
   workNotes: string;
   nextSteps?: string;
   blockers?: string;
+  completionPercent: string;
   selectedImage: File | null;
   uploadedImageUrl: string | null;
 };
@@ -606,6 +637,7 @@ function createEmptyUpdate(): ProjectUpdateState {
     workNotes: "",
     nextSteps: "",
     blockers: "",
+    completionPercent: "",
     selectedImage: null,
     uploadedImageUrl: null
   };
@@ -678,11 +710,40 @@ export default function Dashboard() {
   });
 
   function notify(icon: "success" | "error" | "warning" | "info" | "question", title: string) {
+    const themeByIcon: Record<typeof icon, { background: string; iconColor: string; textColor: string }> = {
+      success: {
+        background: "linear-gradient(135deg, rgba(29,185,84,0.2), rgba(29,185,84,0.12))",
+        iconColor: "#1DB954",
+        textColor: "var(--foreground)",
+      },
+      warning: {
+        background: "linear-gradient(135deg, rgba(245,158,11,0.22), rgba(245,158,11,0.12))",
+        iconColor: "#f59e0b",
+        textColor: "var(--foreground)",
+      },
+      error: {
+        background: "linear-gradient(135deg, rgba(239,68,68,0.2), rgba(239,68,68,0.12))",
+        iconColor: "#ef4444",
+        textColor: "var(--foreground)",
+      },
+      info: {
+        background: "linear-gradient(135deg, rgba(59,130,246,0.2), rgba(59,130,246,0.12))",
+        iconColor: "#3b82f6",
+        textColor: "var(--foreground)",
+      },
+      question: {
+        background: "linear-gradient(135deg, rgba(56,189,248,0.18), rgba(56,189,248,0.1))",
+        iconColor: "#38bdf8",
+        textColor: "var(--foreground)",
+      },
+    };
+    const themed = themeByIcon[icon];
     void toast.fire({
       icon,
       title,
-      background: "var(--card)",
-      color: "var(--foreground)"
+      background: themed.background,
+      iconColor: themed.iconColor,
+      color: themed.textColor
     });
   }
 
@@ -762,6 +823,38 @@ export default function Dashboard() {
     if (file.size > TARGET_UPLOAD_BYTES) {
       notify("info", `${label}: ${bytesToMb(file.size)}MB selected. Near 4MB limit.`);
     }
+  }
+
+  function parseReportUpdates(rawText: string): ReportUpdateEntry[] {
+    try {
+      const parsed = JSON.parse(rawText);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+          project_name: typeof item.project_name === "string" ? item.project_name : "Untitled Project",
+          work_notes: typeof item.work_notes === "string" ? item.work_notes : "",
+          next_steps: typeof item.next_steps === "string" && item.next_steps.trim() ? item.next_steps : null,
+          blockers: typeof item.blockers === "string" && item.blockers.trim() ? item.blockers : null,
+          image_url: typeof item.image_url === "string" && item.image_url.trim() ? item.image_url : null,
+          completion_percent: normalizeCompletionPercent(item.completion_percent),
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  function getReportMetrics(updatesList: ReportUpdateEntry[]) {
+    const totalProjects = updatesList.length;
+    const completionValues = updatesList
+      .map((update) => normalizeCompletionPercent(update.completion_percent))
+      .filter((value): value is number => value !== null);
+    const averageCompletion = completionValues.length
+      ? Math.round(completionValues.reduce((acc, value) => acc + value, 0) / completionValues.length)
+      : null;
+    const blockersCount = updatesList.filter((update) => Boolean(update.blockers)).length;
+    const readyNextSteps = updatesList.filter((update) => Boolean(update.next_steps)).length;
+    return { totalProjects, averageCompletion, blockersCount, readyNextSteps };
   }
 
   function getFeedDraftStorageKey() {
@@ -941,6 +1034,7 @@ export default function Dashboard() {
           next_steps: update.nextSteps?.trim() || null,
           blockers: update.blockers?.trim() || null,
           image_url: update.uploadedImageUrl || null,
+          completion_percent: normalizeCompletionPercent(update.completionPercent),
         })),
       };
 
@@ -969,6 +1063,10 @@ export default function Dashboard() {
             workNotes: nextUpdate.work_notes ?? oldUpdate.workNotes,
             nextSteps: nextUpdate.next_steps ?? "",
             blockers: nextUpdate.blockers ?? "",
+            completionPercent:
+              nextUpdate.completion_percent === null || nextUpdate.completion_percent === undefined
+                ? oldUpdate.completionPercent
+                : String(normalizeCompletionPercent(nextUpdate.completion_percent) ?? ""),
           };
         })
       );
@@ -998,6 +1096,53 @@ export default function Dashboard() {
           : post
       )
     );
+  }
+
+  async function openProfileViewer(profileEmail?: string | null) {
+    const normalizedEmail = (profileEmail || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      notify("warning", "Profile is unavailable for this activity.");
+      return;
+    }
+
+    const localProfile = profiles.find((member) => member.user_email?.toLowerCase() === normalizedEmail);
+    if (localProfile) {
+      setViewingProfile(localProfile);
+      return;
+    }
+
+    if (!session) {
+      notify("warning", "Sign in again to view teammate profiles.");
+      return;
+    }
+
+    try {
+      const fetchedProfile = await fetchWithAuth(
+        `${API_BASE_URL}/profiles/fetch/${encodeURIComponent(normalizedEmail)}`,
+        { cache: "no-store" },
+        session.access_token
+      ) as ProfileRecord;
+
+      if (!fetchedProfile?.user_email) {
+        notify("warning", "Profile data not found.");
+        return;
+      }
+
+      const normalizedProfile = { ...fetchedProfile, user_email: fetchedProfile.user_email.toLowerCase() };
+      setAllProfiles((prev) => {
+        const exists = prev.some((member) => member.user_email?.toLowerCase() === normalizedProfile.user_email);
+        if (exists) {
+          return prev.map((member) =>
+            member.user_email?.toLowerCase() === normalizedProfile.user_email ? { ...member, ...normalizedProfile } : member
+          );
+        }
+        return [...prev, normalizedProfile];
+      });
+      setViewingProfile(normalizedProfile);
+    } catch (err) {
+      console.error(err);
+      notify("error", "Could not open this profile right now.");
+    }
   }
 
   async function fetchNotificationsNow(currentSession: Session) {
@@ -1382,7 +1527,8 @@ export default function Dashboard() {
           work_notes: u.workNotes.trim(), 
           next_steps: u.nextSteps?.trim(),
           blockers: u.blockers?.trim(),
-          image_url: u.uploadedImageUrl 
+          image_url: u.uploadedImageUrl,
+          completion_percent: normalizeCompletionPercent(u.completionPercent),
         }))
       };
       const submitResult = await fetchWithAuth(`${API_BASE_URL}/submit-report`, {
@@ -1789,7 +1935,7 @@ export default function Dashboard() {
   const profileViewer = mounted && viewingProfile
     ? createPortal(
         <div
-          className="fixed inset-0 z-[520] flex items-center justify-center bg-[#020814]/74 p-4 sm:p-6 md:p-10 backdrop-blur-md"
+          className="fixed inset-0 z-[940] flex items-start justify-center overflow-y-auto bg-[#020814]/78 p-3 pt-16 backdrop-blur-md sm:p-6 sm:pt-20"
           onClick={() => setViewingProfile(null)}
         >
           <motion.div
@@ -1797,14 +1943,14 @@ export default function Dashboard() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.985 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="relative flex h-[min(90vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-[color:var(--border)]/80 bg-[color:var(--card)] shadow-[0_28px_80px_-32px_rgba(0,0,0,0.68)]"
+            className="relative my-2 flex max-h-[calc(100dvh-2.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-[color:var(--border)]/80 bg-[color:var(--card)] shadow-[0_28px_80px_-32px_rgba(0,0,0,0.68)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <header className="relative h-44 overflow-hidden border-b border-[color:var(--border)] md:h-56">
+            <header className="relative h-40 overflow-hidden border-b border-[color:var(--border)] md:h-52">
               {viewingProfile.cover_url ? (
                 <img src={viewingProfile.cover_url} className="h-full w-full object-cover" alt="" />
               ) : (
-                <div className="h-full w-full bg-gradient-to-tr from-primary/25 via-primary/10 to-transparent" />
+                <div className="h-full w-full bg-gradient-to-tr from-primary/30 via-primary/12 to-transparent" />
               )}
               <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/55" />
               <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border border-white/25 bg-black/35 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-white/90 backdrop-blur-xl sm:left-6 sm:top-6">
@@ -1827,6 +1973,16 @@ export default function Dashboard() {
                 <div className="mt-5">
                   <h2 className="font-heading text-2xl font-black tracking-tight md:text-[1.75rem]">{viewingProfile.full_name}</h2>
                   <p className="mt-1 break-all text-xs font-semibold text-[color:var(--muted-foreground)]">{viewingProfile.user_email}</p>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2">
+                    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-primary/90">Briefs</p>
+                    <p className="mt-1 text-lg font-black leading-none">{publicProfileReports.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2">
+                    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-primary/90">Posts</p>
+                    <p className="mt-1 text-lg font-black leading-none">{publicProfilePosts.length}</p>
+                  </div>
                 </div>
                 {viewingProfile.bio ? (
                   <div className="mt-5 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/88 p-4 dark:bg-[#122742]/90">
@@ -2004,7 +2160,7 @@ export default function Dashboard() {
     : null;
   const notificationsCenter = mounted && isNotificationsOpen
     ? createPortal(
-        <div className="fixed inset-0 z-[530] flex items-start justify-center bg-black/48 p-4 pt-20 backdrop-blur-sm sm:p-6 sm:pt-24" onClick={() => setIsNotificationsOpen(false)}>
+        <div className="fixed inset-0 z-[930] flex items-start justify-center bg-black/52 p-4 pt-20 backdrop-blur-sm sm:p-6 sm:pt-24" onClick={() => setIsNotificationsOpen(false)}>
           <motion.div
             initial={{ opacity: 0, y: -8, scale: 0.99 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -2013,14 +2169,14 @@ export default function Dashboard() {
             className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-[0_32px_88px_-34px_rgba(0,0,0,0.62)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-5 py-4">
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(29,185,84,0.14),rgba(29,185,84,0.06))] px-5 py-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#1DB954]/35 bg-[#1DB954]/18 text-[#1DB954]">
                   <Bell size={16} />
                 </div>
                 <div>
                   <h3 className="text-sm font-black tracking-tight">Notifications</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">{unreadNotificationsCount} unread</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#1DB954]">{unreadNotificationsCount} unread</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -2056,11 +2212,14 @@ export default function Dashboard() {
                       onClick={() => handleNotificationClick(notification)}
                       className={`mb-2 flex w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all ${
                         isUnread
-                          ? "border-primary/25 bg-primary/10"
+                          ? "border-[#1DB954]/35 bg-[#1DB954]/14 shadow-[0_8px_28px_-18px_rgba(29,185,84,0.6)]"
                           : "border-transparent bg-[color:var(--muted)]/35 hover:border-[color:var(--border)]"
                       }`}
                     >
-                      <img src={actorAvatar} className="mt-0.5 h-9 w-9 rounded-xl border border-[color:var(--border)] object-cover" alt="" />
+                      <div className="relative">
+                        <img src={actorAvatar} className="mt-0.5 h-9 w-9 rounded-xl border border-[color:var(--border)] object-cover" alt="" />
+                        {isUnread && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#1DB954] ring-2 ring-[color:var(--card)]" />}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
                           <p className="truncate text-sm font-bold tracking-tight">{notification.title}</p>
@@ -2069,7 +2228,14 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-[color:var(--muted-foreground)]">{notification.body}</p>
-                        <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-primary">{notification.actor_name || notification.actor_email || "Teammate"}</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-primary">{notification.actor_name || notification.actor_email || "Teammate"}</p>
+                          {isUnread && (
+                            <span className="rounded-full border border-[#1DB954]/35 bg-[#1DB954]/18 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-[#1DB954]">
+                              New
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -2183,14 +2349,19 @@ export default function Dashboard() {
           <div className="flex items-center gap-2.5">
             <button
               onClick={openNotificationsCenter}
-              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:text-primary sm:h-11 sm:w-11"
+              className={`relative flex h-10 w-10 items-center justify-center rounded-xl border bg-[color:var(--card)] transition-all sm:h-11 sm:w-11 ${
+                unreadNotificationsCount > 0
+                  ? "border-[#1DB954]/40 text-[#1DB954] shadow-[0_0_0_4px_rgba(29,185,84,0.14)] hover:border-[#1DB954]/55 hover:text-[#1DB954]"
+                  : "border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:border-primary/30 hover:text-primary"
+              }`}
             >
               <Bell size={16} />
               {unreadNotificationsCount > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive px-1.5 py-[2px] text-[9px] font-black leading-none text-white">
+                <span className="absolute -right-1.5 -top-1.5 rounded-full border border-[#0f7e3b] bg-[#1DB954] px-1.5 py-[2px] text-[9px] font-black leading-none text-black shadow-md">
                   {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
                 </span>
               )}
+              {unreadNotificationsCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[#1DB954] animate-ping opacity-70" />}
             </button>
             <button
               onClick={() => setIsCommandPaletteOpen(true)}
@@ -2433,8 +2604,7 @@ export default function Dashboard() {
                             <div className="flex items-center gap-4">
                               <button 
                                 onClick={() => {
-                                  const p = profiles.find(p => p.user_email === post.author_email);
-                                  if (p) setViewingProfile(p);
+                                  void openProfileViewer(post.author_email);
                                 }}
                                 className="relative group/avatar"
                               >
@@ -2444,8 +2614,7 @@ export default function Dashboard() {
                               <div className="flex flex-col text-left">
                                 <button 
                                   onClick={() => {
-                                    const p = profiles.find(p => p.user_email === post.author_email);
-                                    if (p) setViewingProfile(p);
+                                    void openProfileViewer(post.author_email);
                                   }}
                                   className="font-bold text-base text-[color:var(--foreground)] tracking-tight hover:text-primary transition-colors"
                                 >
@@ -2766,8 +2935,7 @@ export default function Dashboard() {
                             <div className="mb-5 flex items-center gap-3">
                               <button 
                                 onClick={() => {
-                                  const p = profiles.find(p => p.user_email === report.author_email);
-                                  if (p) setViewingProfile(p);
+                                  void openProfileViewer(report.author_email);
                                 }}
                                 className="h-6 w-6 rounded-lg overflow-hidden hover:ring-2 ring-primary/20 transition-all"
                               >
@@ -2923,7 +3091,41 @@ export default function Dashboard() {
                               <textarea required minLength={5} value={update.workNotes} onChange={(e) => { const newU = [...updates]; newU[idx].workNotes = e.target.value; setUpdates(newU); }} placeholder="What was achieved?" className="w-full min-h-[80px] p-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all resize-none" />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]/70 p-3.5">
+                              <div className="mb-2 flex items-center justify-between">
+                                <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-80">Completion (Optional)</label>
+                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-primary/80">
+                                  {update.completionPercent ? `${update.completionPercent}%` : "Not set"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  inputMode="numeric"
+                                  value={update.completionPercent}
+                                  onChange={(e) => {
+                                    const sanitized = e.target.value.replace(/[^\d]/g, "");
+                                    const nextValue = sanitized === "" ? "" : String(Math.min(100, Number(sanitized)));
+                                    const newU = [...updates];
+                                    newU[idx].completionPercent = nextValue;
+                                    setUpdates(newU);
+                                  }}
+                                  placeholder="0-100"
+                                  className="h-10 w-28 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-semibold outline-none focus:border-primary/50"
+                                />
+                                <div className="h-2 flex-1 overflow-hidden rounded-full bg-primary/10 dark:bg-primary/25">
+                                  <div
+                                    className="h-full rounded-full bg-gradient-to-r from-primary/55 to-primary transition-all duration-300"
+                                    style={{ width: `${normalizeCompletionPercent(update.completionPercent) ?? 0}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                               <div className="flex flex-col gap-1.5">
                                 <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Next Steps (Optional)</label>
                                 <input type="text" value={update.nextSteps} onChange={(e) => { const newU = [...updates]; newU[idx].nextSteps = e.target.value; setUpdates(newU); }} placeholder="Planned actions..." className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-sm font-medium outline-none focus:border-primary/50 transition-all" />
@@ -2981,16 +3183,49 @@ export default function Dashboard() {
             {!isLoading && selectedReport && !isComposing && (() => {
               const authorProfile = profiles.find(p => p.user_email === selectedReport.author_email);
               const reportAvatar = authorProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedReport.author_name)}&background=random&size=48&bold=true`;
+              const structuredUpdates = parseReportUpdates(selectedReport.raw_text);
+              const metrics = getReportMetrics(structuredUpdates);
+              const metricCards = [
+                {
+                  id: "completion",
+                  label: "Completion",
+                  value: metrics.averageCompletion !== null ? `${metrics.averageCompletion}%` : "Not set",
+                  helper: metrics.averageCompletion !== null ? "Average of provided project completion values" : "Set completion in project updates",
+                  icon: Trophy,
+                  progress: metrics.averageCompletion,
+                },
+                {
+                  id: "projects",
+                  label: "Projects",
+                  value: String(metrics.totalProjects),
+                  helper: "Tracked in this briefing",
+                  icon: FileText,
+                },
+                {
+                  id: "next",
+                  label: "Next Steps",
+                  value: String(metrics.readyNextSteps),
+                  helper: "Projects with action plan",
+                  icon: CheckCircle2,
+                },
+                {
+                  id: "blockers",
+                  label: "Blockers",
+                  value: String(metrics.blockersCount),
+                  helper: metrics.blockersCount > 0 ? "Requires attention" : "No blockers reported",
+                  icon: Activity,
+                },
+              ];
               
               return (
-                <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex max-w-4xl flex-col gap-10 pb-6">
-                  <div className="card-elevated rounded-[2.25rem] border-primary/5 bg-gradient-to-br from-[color:var(--card)] to-transparent p-6 shadow-2xl dark:border-[#2f4a72] dark:bg-gradient-to-br dark:from-[#0f223d] dark:to-transparent sm:p-10 md:rounded-[3.5rem] md:p-16">
-                    <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
+                <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex w-full max-w-5xl flex-col gap-10 pb-6">
+                  <div className="card-elevated rounded-[2rem] border-primary/10 bg-gradient-to-br from-[color:var(--card)] via-[color:var(--card)] to-primary/5 p-5 shadow-2xl dark:border-[#2f4a72] dark:from-[#10243f] dark:via-[#0e223a] dark:to-[#112e4f] sm:p-8 md:rounded-[2.6rem] md:p-10">
+                    <div className="mb-8 flex flex-col justify-between gap-6 border-b border-[color:var(--border)] pb-8 lg:flex-row lg:items-end">
                       <div>
-                        <div className="flex items-center gap-3 mb-6">
+                        <div className="mb-5 flex items-center gap-3">
                           <button 
                             onClick={() => {
-                              if (authorProfile) setViewingProfile(authorProfile);
+                              void openProfileViewer(selectedReport.author_email);
                             }}
                             className="h-10 w-10 rounded-2xl overflow-hidden shadow-lg shadow-primary/10 ring-2 ring-primary/5 hover:scale-105 transition-transform"
                           >
@@ -2999,7 +3234,7 @@ export default function Dashboard() {
                           <div className="text-left">
                             <button 
                               onClick={() => {
-                                if (authorProfile) setViewingProfile(authorProfile);
+                                void openProfileViewer(selectedReport.author_email);
                               }}
                               className="font-black text-sm tracking-tight hover:text-primary transition-colors"
                             >
@@ -3008,16 +3243,99 @@ export default function Dashboard() {
                             <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div>
                           </div>
                         </div>
-                        <h1 className="mb-4 font-heading text-4xl font-black leading-none tracking-tighter sm:text-5xl">Daily Briefing</h1>
-                        <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] opacity-60"><Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}</div>
+                        <h1 className="mb-3 font-heading text-3xl font-black leading-tight tracking-tight sm:text-4xl">Daily Briefing</h1>
+                        <div className="flex items-center gap-2.5 text-[11px] font-black uppercase tracking-[0.22em] text-[color:var(--muted-foreground)]">
+                          <Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}
+                        </div>
                       </div>
-                      <div className="flex h-16 w-16 items-center justify-center group-hover:scale-110 transition-transform duration-500 p-2"><img src="/logo.png" alt="Logo" className="h-full w-full object-contain" /></div>
+                      <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-[11px] font-semibold text-[color:var(--muted-foreground)] dark:bg-primary/20">
+                        <img src="/logo.png" alt="Logo" className="h-8 w-8 object-contain" />
+                        <span>Autolinium Execution Ledger</span>
+                      </div>
                     </div>
-                    <div className="mb-16"><CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} /></div>
-                    <div className="rounded-[2.5rem] border-2 border-primary/5 bg-primary/5 p-10 shadow-inner dark:border-primary/25 dark:bg-[#10263f]">
-                      <h4 className="mb-8 flex items-center gap-3 font-heading text-sm font-black uppercase tracking-[0.3em] text-primary/60"><FileText size={18} /> Raw Work Notes</h4>
-                      <div className="space-y-10">{(() => { try { const parsed = JSON.parse(selectedReport.raw_text); return parsed.map((p: any, i: number) => ( <div key={i} className="flex flex-col gap-3 relative pl-6 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary/10 before:rounded-full"><span className="text-xs font-black uppercase tracking-[0.2em] text-primary">{p.project_name}</span> <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed">{p.work_notes}</span></div> )); } catch { return <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed italic">"{selectedReport.raw_text}"</span>; } })()}</div>
+
+                    <div className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {metricCards.map((metric) => {
+                        const Icon = metric.icon;
+                        return (
+                          <div key={metric.id} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/85 p-4 shadow-sm backdrop-blur-sm dark:border-[#36527c] dark:bg-[#0f2744]/85">
+                            <div className="mb-2 flex items-center justify-between">
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">{metric.label}</span>
+                              <Icon size={14} className="text-primary" />
+                            </div>
+                            <div className="text-2xl font-black tracking-tight text-[color:var(--foreground)]">{metric.value}</div>
+                            <div className="mt-1 text-[11px] font-medium text-[color:var(--muted-foreground)]">{metric.helper}</div>
+                            {typeof metric.progress === "number" && (
+                              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-primary/15 dark:bg-primary/25">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-primary/55 to-primary"
+                                  style={{ width: `${metric.progress}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
+
+                    <section className="mb-8 rounded-[1.8rem] border border-[color:var(--border)] bg-[color:var(--card)]/82 p-5 dark:border-[#36527c] dark:bg-[#102740]/90 sm:p-7">
+                      <h4 className="mb-5 flex items-center gap-2.5 text-xs font-black uppercase tracking-[0.22em] text-primary">
+                        <Sparkles size={14} /> Professional Summary
+                      </h4>
+                      <CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} />
+                    </section>
+
+                    <section className="rounded-[1.8rem] border border-primary/15 bg-primary/5 p-5 shadow-inner dark:border-primary/30 dark:bg-[#10263f] sm:p-7">
+                      <h4 className="mb-6 flex items-center gap-2.5 text-xs font-black uppercase tracking-[0.22em] text-primary">
+                        <FileText size={14} /> Structured Execution Notes
+                      </h4>
+                      {structuredUpdates.length === 0 ? (
+                        <span className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] italic">
+                          "{selectedReport.raw_text}"
+                        </span>
+                      ) : (
+                        <div className="space-y-4">
+                          {structuredUpdates.map((update, idx) => {
+                            const completion = normalizeCompletionPercent(update.completion_percent);
+                            return (
+                              <article key={`${update.project_name}-${idx}`} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 p-4 dark:border-[#355279] dark:bg-[#102842]/92 sm:p-5">
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                  <h5 className="text-sm font-black uppercase tracking-[0.12em] text-primary">{update.project_name}</h5>
+                                  {completion !== null ? (
+                                    <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-primary">
+                                      {completion}% complete
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-full border border-[color:var(--border)] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
+                                      completion not set
+                                    </span>
+                                  )}
+                                </div>
+                                {completion !== null && (
+                                  <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-primary/15 dark:bg-primary/25">
+                                    <div className="h-full rounded-full bg-gradient-to-r from-primary/55 to-primary" style={{ width: `${completion}%` }} />
+                                  </div>
+                                )}
+                                <div className="space-y-2 text-sm leading-relaxed text-[color:var(--muted-foreground)]">
+                                  <p><span className="font-bold text-[color:var(--foreground)]">Achievements:</span> {update.work_notes || "No notes provided."}</p>
+                                  {update.next_steps && <p><span className="font-bold text-[color:var(--foreground)]">Next Steps:</span> {update.next_steps}</p>}
+                                  {update.blockers && <p><span className="font-bold text-[color:var(--foreground)]">Blockers:</span> {update.blockers}</p>}
+                                  {update.image_url && (
+                                    <button
+                                      onClick={() => setViewingImage(update.image_url!)}
+                                      className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-primary transition-colors hover:bg-primary/20"
+                                    >
+                                      <ImageIcon size={12} />
+                                      View Attachment
+                                    </button>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
                   </div>
                 </motion.div>
               );

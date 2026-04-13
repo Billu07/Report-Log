@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from groq import AsyncGroq
 from starlette.concurrency import run_in_threadpool
@@ -83,6 +83,7 @@ class ProjectUpdate(BaseModel):
     next_steps: Optional[str] = None
     blockers: Optional[str] = None
     image_url: Optional[str] = None
+    completion_percent: Optional[int] = Field(default=None, ge=0, le=100)
 
 class DailyReportRecord(BaseModel):
     id: Optional[str] = None
@@ -265,6 +266,15 @@ async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
     def clean_text(value: Any) -> str:
         return " ".join(str(value or "").split())
 
+    def normalize_completion_percent(value: Any) -> Optional[int]:
+        if value in (None, "") or isinstance(value, bool):
+            return None
+        try:
+            parsed = int(round(float(str(value).replace("%", "").strip())))
+        except Exception:
+            return None
+        return max(0, min(100, parsed))
+
     lines = [
         "# Daily Briefing",
         "_Factual mode: this report uses submitted notes only and does not infer new work._",
@@ -275,9 +285,12 @@ async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
         next_steps = clean_text(update.get("next_steps"))
         blockers = clean_text(update.get("blockers"))
         image_url = clean_text(update.get("image_url"))
+        completion_percent = normalize_completion_percent(update.get("completion_percent"))
 
         lines.append(f"\n## {index}. {project_name}")
         lines.append(f"- **Execution Notes:** {work_notes}")
+        if completion_percent is not None:
+            lines.append(f"- **Completion:** {completion_percent}%")
         if next_steps:
             lines.append(f"- **Next Steps:** {next_steps}")
         if blockers:
@@ -296,6 +309,7 @@ def build_optimize_prompt(updates: list[dict[str, Any]], style: str) -> str:
                 "next_steps": u.get("next_steps"),
                 "blockers": u.get("blockers"),
                 "image_url": u.get("image_url"),
+                "completion_percent": u.get("completion_percent"),
             }
             for u in updates
         ],
@@ -307,10 +321,11 @@ def build_optimize_prompt(updates: list[dict[str, Any]], style: str) -> str:
         "Rules:\n"
         "- Keep perspective in first person where suitable.\n"
         "- Do not invent work, blockers, or next steps.\n"
+        "- Keep completion_percent unchanged when provided.\n"
         "- Keep project_name unchanged unless grammar fixes are needed.\n"
         "- Keep image_url exactly as provided.\n"
         "- Return strict JSON array only, no markdown fences, with objects in this shape:\n"
-        "  {\"project_name\": string, \"work_notes\": string, \"next_steps\": string|null, \"blockers\": string|null, \"image_url\": string|null}\n\n"
+        "  {\"project_name\": string, \"work_notes\": string, \"next_steps\": string|null, \"blockers\": string|null, \"image_url\": string|null, \"completion_percent\": number|null}\n\n"
         f"Input updates JSON:\n{serialized}"
     )
 
@@ -338,6 +353,15 @@ def extract_json_array_block(text: str) -> Optional[list[Any]]:
 def normalize_optimized_updates(
     original_updates: list[dict[str, Any]], candidate_updates: list[Any]
 ) -> list[dict[str, Any]]:
+    def normalize_completion_percent(value: Any) -> Optional[int]:
+        if value in (None, "") or isinstance(value, bool):
+            return None
+        try:
+            parsed = int(round(float(str(value).replace("%", "").strip())))
+        except Exception:
+            return None
+        return max(0, min(100, parsed))
+
     normalized: list[dict[str, Any]] = []
     for idx, original in enumerate(original_updates):
         candidate = candidate_updates[idx] if idx < len(candidate_updates) and isinstance(candidate_updates[idx], dict) else {}
@@ -346,6 +370,8 @@ def normalize_optimized_updates(
         next_steps_raw = candidate.get("next_steps")
         blockers_raw = candidate.get("blockers")
         image_url_raw = candidate.get("image_url")
+        completion_candidate = normalize_completion_percent(candidate.get("completion_percent"))
+        completion_original = normalize_completion_percent(original.get("completion_percent"))
 
         next_steps = (str(next_steps_raw).strip() if next_steps_raw not in (None, "") else None)
         blockers = (str(blockers_raw).strip() if blockers_raw not in (None, "") else None)
@@ -358,6 +384,7 @@ def normalize_optimized_updates(
                 "next_steps": next_steps if next_steps is not None else original.get("next_steps"),
                 "blockers": blockers if blockers is not None else original.get("blockers"),
                 "image_url": image_url if image_url is not None else original.get("image_url"),
+                "completion_percent": completion_candidate if completion_candidate is not None else completion_original,
             }
         )
     return normalized
@@ -412,6 +439,15 @@ async def try_groq_optimize(updates: list[dict[str, Any]], style: str) -> list[d
     raise RuntimeError("All Groq optimize models failed")
 
 def fallback_optimize_updates(updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def normalize_completion_percent(value: Any) -> Optional[int]:
+        if value in (None, "") or isinstance(value, bool):
+            return None
+        try:
+            parsed = int(round(float(str(value).replace("%", "").strip())))
+        except Exception:
+            return None
+        return max(0, min(100, parsed))
+
     fallback: list[dict[str, Any]] = []
     for update in updates:
         work_notes = " ".join(str(update.get("work_notes") or "").split())
@@ -424,6 +460,7 @@ def fallback_optimize_updates(updates: list[dict[str, Any]]) -> list[dict[str, A
                 "next_steps": next_steps,
                 "blockers": blockers,
                 "image_url": update.get("image_url"),
+                "completion_percent": normalize_completion_percent(update.get("completion_percent")),
             }
         )
     return fallback
