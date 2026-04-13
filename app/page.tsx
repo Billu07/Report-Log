@@ -153,6 +153,24 @@ const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
   "image/gif",
   "image/avif",
 ]);
+const FEED_DRAFT_KEY_PREFIX = "autolinium:feed-draft:";
+const FEED_TEMPLATE_SNIPPETS = [
+  {
+    id: "daily-win",
+    label: "Daily Win",
+    text: "Daily win:\n- What we automated\n- Result we unlocked\n- Next momentum move",
+  },
+  {
+    id: "client-shoutout",
+    label: "Client Signal",
+    text: "Client signal:\n- Context\n- Action taken\n- Business impact",
+  },
+  {
+    id: "idea-drop",
+    label: "Idea Drop",
+    text: "Idea drop:\nWhat if we automate the handoff between _ and _ so no task stalls in between?",
+  },
+];
 
 function bytesToMb(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(2);
@@ -526,6 +544,15 @@ type CommandPaletteAction = {
   run: () => void | Promise<void>;
 };
 
+type ReactionBurst = {
+  id: string;
+  anchor: string;
+  emoji: string;
+  x: number;
+  y: number;
+  size: number;
+};
+
 function createEmptyUpdate(): ProjectUpdateState {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -572,6 +599,8 @@ export default function Dashboard() {
   // Compose Post State
   const [postContent, setPostContent] = useState("");
   const [postImage, setPostImage] = useState<File | null>(null);
+  const [hasLoadedFeedDraft, setHasLoadedFeedDraft] = useState(false);
+  const [reactionBursts, setReactionBursts] = useState<ReactionBurst[]>([]);
   const [isPosting, setIsPosting] = useState(false);
   const [commentingPostId, setCommentingPostId] = useState<string | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
@@ -679,6 +708,57 @@ export default function Dashboard() {
     if (file.size > TARGET_UPLOAD_BYTES) {
       notify("info", `${label}: ${bytesToMb(file.size)}MB selected. Near 4MB limit.`);
     }
+  }
+
+  function getFeedDraftStorageKey() {
+    const email = session?.user?.email?.toLowerCase();
+    if (!email) return null;
+    return `${FEED_DRAFT_KEY_PREFIX}${email}`;
+  }
+
+  function applyFeedTemplate(templateText: string) {
+    setPostContent((prev) => {
+      const cleanPrev = prev.trim();
+      if (!cleanPrev) return templateText;
+      return `${cleanPrev}\n\n${templateText}`;
+    });
+  }
+
+  function triggerReactionBurst(anchor: string, emoji: string) {
+    const spawned = Array.from({ length: 6 }).map((_, idx) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${idx}`,
+      anchor,
+      emoji,
+      x: Math.round((Math.random() - 0.5) * 90),
+      y: -Math.round(30 + Math.random() * 70),
+      size: 14 + Math.round(Math.random() * 8),
+    }));
+    setReactionBursts((prev) => [...prev, ...spawned]);
+    window.setTimeout(() => {
+      const spawnedIds = new Set(spawned.map((item) => item.id));
+      setReactionBursts((prev) => prev.filter((item) => !spawnedIds.has(item.id)));
+    }, 900);
+  }
+
+  function renderReactionBursts(anchor: string) {
+    const items = reactionBursts.filter((burst) => burst.anchor === anchor);
+    if (items.length === 0) return null;
+    return (
+      <div className="pointer-events-none absolute left-1/2 top-0 z-30 h-0 w-0">
+        {items.map((burst) => (
+          <motion.span
+            key={burst.id}
+            initial={{ opacity: 0, x: 0, y: 8, scale: 0.65 }}
+            animate={{ opacity: [0, 1, 1, 0], x: burst.x, y: burst.y, scale: [0.65, 1.05, 0.88] }}
+            transition={{ duration: 0.86, ease: "easeOut" }}
+            className="absolute select-none drop-shadow"
+            style={{ fontSize: `${burst.size}px` }}
+          >
+            {burst.emoji}
+          </motion.span>
+        ))}
+      </div>
+    );
   }
 
   async function confirmAction(title: string, text: string) {
@@ -835,6 +915,45 @@ export default function Dashboard() {
       document.body.style.overflow = previousOverflow;
     };
   }, [mounted, viewingImage, viewingProfile, isCommandPaletteOpen]);
+
+  useEffect(() => {
+    setHasLoadedFeedDraft(false);
+    setPostContent("");
+    setPostImage(null);
+  }, [session?.user?.email]);
+
+  useEffect(() => {
+    if (!mounted || hasLoadedFeedDraft) return;
+    const key = getFeedDraftStorageKey();
+    if (!key) return;
+    try {
+      const rawDraft = localStorage.getItem(key);
+      if (rawDraft) {
+        const parsed = JSON.parse(rawDraft) as { content?: string };
+        if (parsed.content) setPostContent(parsed.content);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setHasLoadedFeedDraft(true);
+    }
+  }, [mounted, hasLoadedFeedDraft, session?.user?.email]);
+
+  useEffect(() => {
+    if (!mounted || !hasLoadedFeedDraft) return;
+    const key = getFeedDraftStorageKey();
+    if (!key) return;
+    try {
+      const clean = postContent.trim();
+      if (!clean) {
+        localStorage.removeItem(key);
+        return;
+      }
+      localStorage.setItem(key, JSON.stringify({ content: postContent, updatedAt: Date.now() }));
+    } catch (err) {
+      console.error(err);
+    }
+  }, [mounted, hasLoadedFeedDraft, postContent, session?.user?.email]);
 
   // Load Data
   useEffect(() => {
@@ -1082,6 +1201,14 @@ export default function Dashboard() {
       ]);
       setPostContent("");
       setPostImage(null);
+      const draftKey = getFeedDraftStorageKey();
+      if (draftKey) {
+        try {
+          localStorage.removeItem(draftKey);
+        } catch (err) {
+          console.error(err);
+        }
+      }
       notify("success", "Post published.");
     } catch (err) {
       console.error(err);
@@ -1165,6 +1292,7 @@ export default function Dashboard() {
 
   async function handleReaction(id: string, emoji: string, type: "post" | "comment") {
     if (!session) return;
+    triggerReactionBurst(`${type}-${id}`, emoji);
     
     // OPTIMISTIC UPDATE
     const userEmail = session.user.email;
@@ -1694,6 +1822,27 @@ export default function Dashboard() {
                           </div>
                         )}
                       </div>
+
+                      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-3.5 dark:border-[#35527c] dark:bg-[#112844]">
+                        <div className="mb-2.5 flex items-center justify-between gap-3">
+                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Quick Templates</span>
+                          <span className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">
+                            {hasLoadedFeedDraft ? "Draft autosaved" : "Preparing draft memory..."}
+                          </span>
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                          {FEED_TEMPLATE_SNIPPETS.map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              onClick={() => applyFeedTemplate(template.text)}
+                              className="shrink-0 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:text-primary dark:border-[#3a5986] dark:bg-[#10243e]"
+                            >
+                              {template.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       
                       {postImage && (
                         <div className="group relative w-fit overflow-hidden rounded-2xl border border-[color:var(--border)]">
@@ -1717,9 +1866,14 @@ export default function Dashboard() {
                             }}
                           />
                         </label>
-                        <button type="submit" disabled={isPosting || (!postContent.trim() && !postImage)} className="button-primary h-10 px-6 rounded-xl font-bold tracking-tight">
-                          {isPosting ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Post Briefing"}
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <span className="hidden text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)] sm:inline">
+                            {postContent.trim() ? postContent.trim().split(/\s+/).length : 0} words
+                          </span>
+                          <button type="submit" disabled={isPosting || (!postContent.trim() && !postImage)} className="button-primary h-10 px-6 rounded-xl font-bold tracking-tight">
+                            {isPosting ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Post Briefing"}
+                          </button>
+                        </div>
                       </div>
                     </form>
                   </div>
@@ -1807,7 +1961,8 @@ export default function Dashboard() {
                           
                           {/* Post Actions */}
                           <div className="flex items-center justify-between border-t border-[color:var(--border)] bg-[color:var(--muted)]/45 px-6 py-3.5 dark:border-[#2d466b] dark:bg-[#10243f]">
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="relative flex flex-wrap gap-1.5">
+                              {renderReactionBursts(`post-${post.id}`)}
                               {EMOJI_OPTIONS.map(({ char }) => {
                                 const count = post.reactions.filter(r => r.emoji === char).length;
                                 const isReacted = post.reactions.some(r => r.emoji === char && r.author_email === session.user.email);
@@ -1865,7 +2020,8 @@ export default function Dashboard() {
                                         <div className="flex items-center gap-3 ml-2 mt-1">
                                           <button onClick={() => handleReply(comment.author_name || "", post.id)} className="text-[10px] font-bold uppercase tracking-widest text-primary opacity-0 group-hover/comment:opacity-100 transition-opacity">Reply</button>
                                           {/* Comment Reactions */}
-                                          <div className="flex gap-1.5">
+                                          <div className="relative flex gap-1.5">
+                                            {renderReactionBursts(`comment-${comment.id}`)}
                                             {EMOJI_OPTIONS.slice(0,3).map(({char}) => {
                                               const count = comment.reactions?.filter(r => r.emoji === char).length || 0;
                                               const isReacted = comment.reactions?.some(r => r.emoji === char && r.author_email === session.user.email);
@@ -1887,7 +2043,7 @@ export default function Dashboard() {
                               <img src={userAvatar} className="h-9 w-9 shrink-0 rounded-xl border border-[color:var(--border)] object-cover ring-2 ring-primary/5" alt="" />
                               <div className="flex-1 relative">
                                 <form onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement; handleCommentSubmit(post.id, input.value); input.value = ''; }} className="relative flex items-center">
-                                  <input id={`comment-input-${post.id}`} name="comment" type="text" disabled={commentingPostId === post.id} placeholder="Add a comment... type @ to mention" className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 pr-12 text-sm font-semibold outline-none ring-primary/5 transition-all focus:border-primary/30 focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#3b5a85] dark:bg-[#10233d]" onChange={(e) => {
+                                  <input id={`comment-input-${post.id}`} name="comment" type="text" disabled={commentingPostId === post.id} placeholder={replyTo ? `Replying to @${replyTo}... type @ to mention` : "Add a comment... type @ to mention"} className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 pr-12 text-sm font-semibold outline-none ring-primary/5 transition-all focus:border-primary/30 focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#3b5a85] dark:bg-[#10233d]" onChange={(e) => {
                                     if(e.target.value.endsWith("@")) setMentionSearch(post.id);
                                     else if (!e.target.value.includes("@")) setMentionSearch(null);
                                   }} />
