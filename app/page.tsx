@@ -44,7 +44,10 @@ import {
   CheckCircle2,
   MoreHorizontal,
   Trash2,
-  AtSign
+  AtSign,
+  Trophy,
+  BookMarked,
+  Copy
 } from "lucide-react";
 import { useUploadThing } from "../utils/uploadthing";
 import { clsx, type ClassValue } from "clsx";
@@ -154,6 +157,29 @@ const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
   "image/avif",
 ]);
 const FEED_DRAFT_KEY_PREFIX = "autolinium:feed-draft:";
+const FEED_PLAYBOOK_KEY_PREFIX = "autolinium:feed-playbooks:";
+const WIN_SIGNAL_KEYWORDS = [
+  "delivered",
+  "launched",
+  "automated",
+  "improved",
+  "reduced",
+  "saved",
+  "shipped",
+  "deployed",
+  "optimized",
+  "closed",
+];
+const PLAYBOOK_SIGNAL_KEYWORDS = [
+  "playbook",
+  "template",
+  "automation flow",
+  "workflow",
+  "recipe",
+  "steps",
+  "trigger",
+  "stack",
+];
 const FEED_TEMPLATE_SNIPPETS = [
   {
     id: "daily-win",
@@ -169,6 +195,11 @@ const FEED_TEMPLATE_SNIPPETS = [
     id: "idea-drop",
     label: "Idea Drop",
     text: "Idea drop:\nWhat if we automate the handoff between _ and _ so no task stalls in between?",
+  },
+  {
+    id: "playbook-snippet",
+    label: "Playbook Snippet",
+    text: "Playbook:\nTrigger:\nTools Stack:\nFlow:\nOutcome:",
   },
 ];
 
@@ -600,6 +631,8 @@ export default function Dashboard() {
   const [postContent, setPostContent] = useState("");
   const [postImage, setPostImage] = useState<File | null>(null);
   const [hasLoadedFeedDraft, setHasLoadedFeedDraft] = useState(false);
+  const [savedPlaybookPostIds, setSavedPlaybookPostIds] = useState<string[]>([]);
+  const [feedLens, setFeedLens] = useState<"all" | "wins" | "playbooks">("all");
   const [reactionBursts, setReactionBursts] = useState<ReactionBurst[]>([]);
   const [isPosting, setIsPosting] = useState(false);
   const [commentingPostId, setCommentingPostId] = useState<string | null>(null);
@@ -716,12 +749,58 @@ export default function Dashboard() {
     return `${FEED_DRAFT_KEY_PREFIX}${email}`;
   }
 
+  function getPlaybookStorageKey() {
+    const email = session?.user?.email?.toLowerCase();
+    if (!email) return null;
+    return `${FEED_PLAYBOOK_KEY_PREFIX}${email}`;
+  }
+
   function applyFeedTemplate(templateText: string) {
     setPostContent((prev) => {
       const cleanPrev = prev.trim();
       if (!cleanPrev) return templateText;
       return `${cleanPrev}\n\n${templateText}`;
     });
+  }
+
+  function postHasWinSignal(post: PostRecord) {
+    const content = post.content.toLowerCase();
+    return WIN_SIGNAL_KEYWORDS.some((keyword) => content.includes(keyword));
+  }
+
+  function postHasPlaybookSignal(post: PostRecord) {
+    const content = post.content.toLowerCase();
+    return PLAYBOOK_SIGNAL_KEYWORDS.some((keyword) => content.includes(keyword));
+  }
+
+  function scorePostImpact(post: PostRecord) {
+    const reactionWeight = post.reactions.length * 3;
+    const commentWeight = post.comments.length * 2;
+    const freshnessHours = Math.max(
+      1,
+      (Date.now() - new Date(post.created_at).getTime()) / (1000 * 60 * 60)
+    );
+    const freshnessWeight = Math.max(0, 28 - Math.round(freshnessHours / 6));
+    const winBonus = postHasWinSignal(post) ? 6 : 0;
+    return reactionWeight + commentWeight + freshnessWeight + winBonus;
+  }
+
+  function toggleSavedPlaybook(postId: string) {
+    setSavedPlaybookPostIds((prev) =>
+      prev.includes(postId) ? prev.filter((id) => id !== postId) : [postId, ...prev]
+    );
+  }
+
+  async function copyPlaybook(post: PostRecord) {
+    const text = post.content.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      notify("success", "Playbook snippet copied.");
+    } catch (err) {
+      console.error(err);
+      notify("warning", "Unable to copy on this browser.");
+    }
   }
 
   function triggerReactionBurst(anchor: string, emoji: string) {
@@ -920,6 +999,8 @@ export default function Dashboard() {
     setHasLoadedFeedDraft(false);
     setPostContent("");
     setPostImage(null);
+    setSavedPlaybookPostIds([]);
+    setFeedLens("all");
   }, [session?.user?.email]);
 
   useEffect(() => {
@@ -954,6 +1035,37 @@ export default function Dashboard() {
       console.error(err);
     }
   }, [mounted, hasLoadedFeedDraft, postContent, session?.user?.email]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const key = getPlaybookStorageKey();
+    if (!key) return;
+    try {
+      const rawSaved = localStorage.getItem(key);
+      if (!rawSaved) return;
+      const parsed = JSON.parse(rawSaved) as { ids?: string[] };
+      if (Array.isArray(parsed.ids)) {
+        setSavedPlaybookPostIds(parsed.ids.filter((id): id is string => typeof id === "string"));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [mounted, session?.user?.email]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const key = getPlaybookStorageKey();
+    if (!key) return;
+    try {
+      if (savedPlaybookPostIds.length === 0) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, JSON.stringify({ ids: savedPlaybookPostIds }));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [mounted, savedPlaybookPostIds, session?.user?.email]);
 
   // Load Data
   useEffect(() => {
@@ -1021,6 +1133,26 @@ export default function Dashboard() {
       subtitle: "Open company feed",
       keywords: "feed company updates posts",
       run: () => openWorkspaceTab("feed"),
+    },
+    {
+      id: "go-feed-wins",
+      title: "Open Wins Lens",
+      subtitle: "See high-impact updates",
+      keywords: "feed wins wall impact",
+      run: () => {
+        openWorkspaceTab("feed");
+        setFeedLens("wins");
+      },
+    },
+    {
+      id: "go-feed-playbooks",
+      title: "Open Playbooks Lens",
+      subtitle: "See saved automation snippets",
+      keywords: "feed playbook automation snippets",
+      run: () => {
+        openWorkspaceTab("feed");
+        setFeedLens("playbooks");
+      },
     },
     {
       id: "go-profile",
@@ -1417,6 +1549,19 @@ export default function Dashboard() {
   const displayedReports = selectedAuthor ? reports.filter(r => r.author_name === selectedAuthor) : reports;
   const myReports = reports.filter(r => r.author_name === (profile?.full_name || session.user.user_metadata.full_name || session.user.email));
   const reportsToShow = isCEO ? displayedReports : myReports;
+  const winsWallPosts = [...posts]
+    .map((post) => ({ post, score: scorePostImpact(post) }))
+    .filter(({ post, score }) => postHasWinSignal(post) || score >= 10)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
+  const playbookPosts = posts.filter(
+    (post) => savedPlaybookPostIds.includes(post.id) || postHasPlaybookSignal(post)
+  );
+  const visibleFeedPosts = feedLens === "wins"
+    ? winsWallPosts.map((item) => item.post)
+    : feedLens === "playbooks"
+      ? playbookPosts
+      : posts;
 
   const userAvatar = profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || session.user.email || "U")}&background=random`;
   const attachmentViewer = mounted && viewingImage
@@ -1880,15 +2025,95 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex flex-col gap-7">
-                  {posts.length === 0 ? (
-                    <div className="rounded-[2rem] border border-dashed border-[color:var(--border)] px-8 py-16 text-center font-medium italic text-[color:var(--muted-foreground)] backdrop-blur-sm">No transmissions found in the current sector.</div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <section className="rounded-[1.6rem] border border-[color:var(--border)] bg-[color:var(--card)]/88 p-5 shadow-sm dark:border-[#35527b] dark:bg-[#112741]/92">
+                      <div className="mb-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-primary">
+                          <Trophy size={16} />
+                          <h4 className="text-[11px] font-black uppercase tracking-[0.16em]">Wins Wall</h4>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">Top Momentum</span>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        {winsWallPosts.length === 0 ? (
+                          <p className="text-xs italic text-[color:var(--muted-foreground)]">Your wins will appear here as the feed gets active.</p>
+                        ) : (
+                          winsWallPosts.slice(0, 3).map(({ post, score }) => (
+                            <button key={post.id} type="button" onClick={() => setFeedLens("all")} className="group/win rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-3 text-left transition-all hover:border-primary/25 hover:bg-primary/5 dark:border-[#3a5886] dark:bg-[#132943]">
+                              <p className="line-clamp-2 text-sm font-semibold leading-snug text-[color:var(--foreground)]">{post.content}</p>
+                              <div className="mt-2 flex items-center justify-between">
+                                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{post.author_name}</span>
+                                <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-primary">
+                                  score {score}
+                                </span>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[1.6rem] border border-[color:var(--border)] bg-[color:var(--card)]/88 p-5 shadow-sm dark:border-[#35527b] dark:bg-[#112741]/92">
+                      <div className="mb-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-primary">
+                          <BookMarked size={16} />
+                          <h4 className="text-[11px] font-black uppercase tracking-[0.16em]">Automation Playbooks</h4>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">{playbookPosts.length} snippets</span>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        {playbookPosts.length === 0 ? (
+                          <p className="text-xs italic text-[color:var(--muted-foreground)]">Save posts as playbooks from the post menu.</p>
+                        ) : (
+                          playbookPosts.slice(0, 3).map((post) => (
+                            <div key={post.id} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-3 dark:border-[#3a5886] dark:bg-[#132943]">
+                              <p className="line-clamp-3 text-sm font-semibold leading-snug text-[color:var(--foreground)]">{post.content}</p>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{post.author_name}</span>
+                                <button type="button" onClick={() => void copyPlaybook(post)} className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/25 hover:text-primary">
+                                  <Copy size={12} />
+                                  Copy
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                  </div>
+
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                    {([
+                      { id: "all", label: "All Feed" },
+                      { id: "wins", label: "Wins Lens" },
+                      { id: "playbooks", label: "Playbooks Lens" },
+                    ] as Array<{ id: "all" | "wins" | "playbooks"; label: string }>).map((lens) => (
+                      <button
+                        key={lens.id}
+                        type="button"
+                        onClick={() => setFeedLens(lens.id)}
+                        className={`rounded-full border px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] transition-all ${
+                          feedLens === lens.id
+                            ? "border-primary/25 bg-primary text-white"
+                            : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:border-primary/25 hover:text-primary"
+                        }`}
+                      >
+                        {lens.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {visibleFeedPosts.length === 0 ? (
+                    <div className="rounded-[2rem] border border-dashed border-[color:var(--border)] px-8 py-16 text-center font-medium italic text-[color:var(--muted-foreground)] backdrop-blur-sm">
+                      {feedLens === "all" ? "No transmissions found in the current sector." : `No posts found for ${feedLens} lens yet.`}
+                    </div>
                   ) : (
-                    posts.map(post => {
+                    visibleFeedPosts.map(post => {
                       const postAvatar = post.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.author_name || "U")}&background=random`;
                       const isMyPost = post.author_email === session.user.email;
                       
                       return (
-                        <div key={post.id} className="group/card card-elevated relative flex flex-col overflow-hidden rounded-[2rem] border-[color:var(--border)]/80 bg-[color:var(--card)]/95 shadow-xl shadow-black/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 dark:border-[#334f78] dark:bg-[#0d1e34]/92 dark:shadow-black/45">
+                        <div id={`feed-post-${post.id}`} key={post.id} className="group/card card-elevated relative flex flex-col overflow-hidden rounded-[2rem] border-[color:var(--border)]/80 bg-[color:var(--card)]/95 shadow-xl shadow-black/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 dark:border-[#334f78] dark:bg-[#0d1e34]/92 dark:shadow-black/45">
                           {/* Post Header */}
                           <div className="flex items-center justify-between px-6 pb-4 pt-6">
                             <div className="flex items-center gap-4">
@@ -1931,11 +2156,26 @@ export default function Dashboard() {
                                       {deletingPostId === post.id ? <LoadingSpinner className="h-4 w-4" tone="danger" /> : <Trash2 size={16} />} Delete Post
                                     </button>
                                   )}
-                                  <button className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-[color:var(--foreground)] hover:bg-primary/5 transition-colors text-left">
+                                  <button
+                                    onClick={async () => {
+                                      const postUrl = `${window.location.origin}/#feed-post-${post.id}`;
+                                      try {
+                                        await navigator.clipboard.writeText(postUrl);
+                                        notify("success", "Post link copied.");
+                                      } catch (err) {
+                                        console.error(err);
+                                        notify("warning", "Unable to copy link.");
+                                      }
+                                    }}
+                                    className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-[color:var(--foreground)] hover:bg-primary/5 transition-colors text-left"
+                                  >
                                     <AtSign size={16} /> Copy Link
                                   </button>
-                                  <button className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-[color:var(--foreground)] hover:bg-primary/5 transition-colors text-left">
-                                    <Lock size={16} /> Report
+                                  <button
+                                    onClick={() => toggleSavedPlaybook(post.id)}
+                                    className="w-full flex items-center gap-3 px-4 py-2 text-sm font-bold text-[color:var(--foreground)] hover:bg-primary/5 transition-colors text-left"
+                                  >
+                                    <BookMarked size={16} /> {savedPlaybookPostIds.includes(post.id) ? "Remove Playbook" : "Save Playbook"}
                                   </button>
                                 </div>
                               </div>
