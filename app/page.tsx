@@ -142,7 +142,7 @@ function LoadingSpinner({ className = "h-6 w-6" }: { className?: string }) {
       <motion.div
         animate={{ rotate: 360 }}
         transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-        className="h-full w-full border-2 border-primary/20 border-t-primary rounded-full"
+        className="h-full w-full border-2 border-primary/30 border-t-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.3)]"
       />
     </div>
   );
