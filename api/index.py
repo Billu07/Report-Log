@@ -528,7 +528,12 @@ async def get_all_profiles(user: Any = Depends(get_current_user)):
 
 @app.get("/api/backend/profiles/fetch/{email}", response_model=ProfileRecord)
 async def get_profile_by_email(email: str, user: Any = Depends(get_current_user)):
-    resp = await run_in_threadpool(supabase.table("profiles").select("*").eq("user_email", email).execute)
+    target_email = (email or "").strip().lower()
+    if not target_email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    # Prefer case-insensitive match because historical rows may contain mixed-case emails.
+    resp = await run_in_threadpool(supabase.table("profiles").select("*").ilike("user_email", target_email).execute)
     if not resp.data: raise HTTPException(status_code=404, detail="Not found")
     return ProfileRecord(**resp.data[0])
 

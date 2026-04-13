@@ -1896,9 +1896,21 @@ export default function Dashboard() {
           >
             <div className="flex h-14 items-center justify-between border-b border-[color:var(--border)] px-5">
               <div className="flex items-center gap-3">
-                <img src={viewingPost.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingPost.author_name || "U")}&background=random`} className="h-8 w-8 rounded-xl border border-[color:var(--border)] object-cover" alt="" />
+                <button
+                  type="button"
+                  onClick={() => void openProfileViewer(viewingPost.author_email)}
+                  className="h-8 w-8 overflow-hidden rounded-xl border border-[color:var(--border)] transition-all hover:scale-[1.03] hover:ring-2 hover:ring-primary/20"
+                >
+                  <img src={viewingPost.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingPost.author_name || "U")}&background=random`} className="h-8 w-8 rounded-xl object-cover" alt="" />
+                </button>
                 <div>
-                  <div className="text-sm font-black tracking-tight">{viewingPost.author_name || "Unknown"}</div>
+                  <button
+                    type="button"
+                    onClick={() => void openProfileViewer(viewingPost.author_email)}
+                    className="text-sm font-black tracking-tight transition-colors hover:text-primary"
+                  >
+                    {viewingPost.author_name || "Unknown"}
+                  </button>
                   <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">{formatDistanceToNow(parseISO(viewingPost.created_at), { addSuffix: true })}</div>
                 </div>
               </div>
@@ -2527,7 +2539,16 @@ export default function Dashboard() {
                             <button key={post.id} type="button" onClick={() => setFeedLens("all")} className="group/win rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-3 text-left transition-all hover:border-primary/25 hover:bg-primary/5 dark:border-[#3a5886] dark:bg-[#132943]">
                               <p className="line-clamp-2 text-sm font-semibold leading-snug text-[color:var(--foreground)]">{post.content}</p>
                               <div className="mt-2 flex items-center justify-between">
-                                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{post.author_name}</span>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void openProfileViewer(post.author_email);
+                                  }}
+                                  className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary transition-colors hover:text-primary/80"
+                                >
+                                  {post.author_name}
+                                </button>
                                 <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-primary">
                                   score {score}
                                 </span>
@@ -2554,7 +2575,13 @@ export default function Dashboard() {
                             <div key={post.id} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-3 dark:border-[#3a5886] dark:bg-[#132943]">
                               <p className="line-clamp-3 text-sm font-semibold leading-snug text-[color:var(--foreground)]">{post.content}</p>
                               <div className="mt-2 flex items-center justify-between gap-2">
-                                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{post.author_name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => void openProfileViewer(post.author_email)}
+                                  className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary transition-colors hover:text-primary/80"
+                                >
+                                  {post.author_name}
+                                </button>
                                 <button type="button" onClick={() => void copyPlaybook(post)} className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/25 hover:text-primary">
                                   <Copy size={12} />
                                   Copy
@@ -2728,11 +2755,23 @@ export default function Dashboard() {
                                   const isMyComment = comment.author_email === session.user.email;
                                   return (
                                     <div key={comment.id} className="group/comment flex gap-4">
-                                      <img src={commentAvatar} className="h-9 w-9 shrink-0 rounded-xl border border-[color:var(--border)] object-cover ring-2 ring-primary/5" alt="" />
+                                      <button
+                                        type="button"
+                                        onClick={() => void openProfileViewer(comment.author_email)}
+                                        className="h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-[color:var(--border)] ring-2 ring-primary/5 transition-all hover:scale-[1.03] hover:ring-primary/25"
+                                      >
+                                        <img src={commentAvatar} className="h-full w-full object-cover" alt="" />
+                                      </button>
                                       <div className="flex flex-col gap-1 flex-1">
                                         <div className="flex items-center justify-between">
                                           <div className="flex items-center gap-3">
-                                            <span className="font-bold text-sm tracking-tight">{comment.author_name}</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => void openProfileViewer(comment.author_email)}
+                                              className="font-bold text-sm tracking-tight transition-colors hover:text-primary"
+                                            >
+                                              {comment.author_name}
+                                            </button>
                                             <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-40">{formatDistanceToNow(parseISO(comment.created_at), { addSuffix: true })}</span>
                                           </div>
                                           {isMyComment && <button onClick={() => handleDeleteComment(post.id, comment.id)} disabled={deletingCommentId === comment.id} className="flex h-6 w-6 items-center justify-center rounded-lg text-destructive opacity-0 transition-all hover:bg-destructive/10 group-hover/comment:opacity-100 disabled:cursor-not-allowed disabled:opacity-60">{deletingCommentId === comment.id ? <LoadingSpinner className="h-3 w-3" tone="danger" /> : <Trash2 size={12}/>}</button>}
