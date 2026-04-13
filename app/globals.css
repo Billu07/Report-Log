@@ -12,8 +12,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   
-  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-proxima), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-proxima), ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -61,7 +61,7 @@
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans);
+  font-family: var(--font-proxima);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   position: relative;
@@ -136,7 +136,7 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
+  font-family: var(--font-proxima);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
