@@ -216,28 +216,38 @@ function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: s
 // --- AUTH SCREEN ---
 function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => void }) {
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isResetMode, setIsResetMode] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    setMessage(null);
     try {
+      if (isResetMode) {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}`,
+        });
+        if (resetError) throw resetError;
+        setMessage("Check your email for the reset link.");
+        return;
+      }
+
       if (isSignUp) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email, password, options: { data: { full_name: fullName } }
         });
         if (signUpError) throw signUpError;
         
-        // If auto-confirm is enabled in Supabase, we might get a session immediately
         if (data.session) {
           onAuthSuccess(data.session);
         } else {
-          // If confirm is still required, show a friendly message but allow them to try logging in
           setError("Account created! You can now sign in.");
           setIsSignUp(false);
         }
@@ -257,12 +267,12 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
           <img src="/logo.png" alt="Company Logo" className="h-16 w-16 object-contain mb-6" />
           <h1 className="font-heading text-3xl font-extrabold tracking-tight text-primary">Autolinium</h1>
           <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/5 border border-primary/10 text-[10px] font-black uppercase tracking-[0.2em] text-primary/60">
-            {isSignUp ? "Identity Registration" : "Authorized Access Only"}
+            {isResetMode ? "Security Recovery" : isSignUp ? "Identity Registration" : "Authorized Access Only"}
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-          {isSignUp && (
+          {isSignUp && !isResetMode && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
               <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Full Name</label>
               <div className="relative">
@@ -278,23 +288,37 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
               <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input-field pl-11" placeholder="you@company.com" />
             </div>
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Password</label>
-            <div className="relative">
-              <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
-              <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input-field pl-11" placeholder="••••••••" />
+          {!isResetMode && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Password</label>
+                {!isSignUp && (
+                  <button type="button" onClick={() => { setIsResetMode(true); setError(null); }} className="text-[10px] font-bold text-primary hover:underline">Forgot password?</button>
+                )}
+              </div>
+              <div className="relative">
+                <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+                <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input-field pl-11" placeholder="••••••••" />
+              </div>
             </div>
-          </div>
+          )}
           {error && <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">{error}</div>}
+          {message && <div className="rounded-xl bg-primary/10 border border-primary/20 p-4 text-sm text-primary font-bold">{message}</div>}
           <button type="submit" disabled={isLoading} className="button-primary mt-4 w-full h-12 text-base">
-            {isLoading ? <LoadingSpinner className="h-5 w-5 border-t-white border-white/20" /> : isSignUp ? "Create Account" : "Sign In"}
+            {isLoading ? <LoadingSpinner className="h-5 w-5 border-t-white border-white/20" /> : isResetMode ? "Send Recovery Link" : isSignUp ? "Create Account" : "Sign In"}
           </button>
         </form>
         <div className="mt-8 text-center text-sm text-[color:var(--muted-foreground)]">
-          {isSignUp ? "Already have an account? " : "Need an account? "}
-          <button onClick={() => { setIsSignUp(!isSignUp); setError(null); }} className="font-bold text-primary hover:underline">
-            {isSignUp ? "Sign In" : "Sign Up"}
-          </button>
+          {isResetMode ? (
+            <button onClick={() => { setIsResetMode(false); setError(null); setMessage(null); }} className="font-bold text-primary hover:underline italic">Back to Sign In</button>
+          ) : (
+            <>
+              {isSignUp ? "Already have an account? " : "Need an account? "}
+              <button onClick={() => { setIsSignUp(!isSignUp); setError(null); setMessage(null); }} className="font-bold text-primary hover:underline">
+                {isSignUp ? "Sign In" : "Sign Up"}
+              </button>
+            </>
+          )}
         </div>
       </motion.div>
     </div>
