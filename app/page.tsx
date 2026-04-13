@@ -361,12 +361,16 @@ export default function Dashboard() {
 
   // Load Data
   useEffect(() => {
+    // IMMEDIATE RESET: Clear all user-specific state when session changes
+    setReports([]);
+    setPosts([]);
+    setProfile(null);
+    setAllProfiles([]);
+    setSelectedReport(null);
+    setSelectedAuthor(null);
+    
     if (!session) { 
       setIsLoading(false); 
-      setReports([]);
-      setPosts([]);
-      setProfile(null);
-      setAllProfiles([]);
       return; 
     }
     let isCancelled = false;
