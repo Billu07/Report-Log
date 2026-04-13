@@ -125,6 +125,91 @@ const EMOJI_OPTIONS = [
   { char: "👀", label: "Eyes" },
 ];
 
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const TARGET_UPLOAD_BYTES = Math.floor(3.8 * 1024 * 1024);
+const MAX_IMAGE_DIMENSION = 2400;
+
+function bytesToMb(bytes: number) {
+  return (bytes / (1024 * 1024)).toFixed(2);
+}
+
+function toJpegFileName(fileName: string) {
+  const dotIndex = fileName.lastIndexOf(".");
+  const base = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
+  return `${base}.jpg`;
+}
+
+function loadImageElement(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Unable to read selected image."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Image processing failed."));
+        return;
+      }
+      resolve(blob);
+    }, "image/jpeg", quality);
+  });
+}
+
+async function compressImageToLimit(file: File, maxBytes: number) {
+  if (file.size <= maxBytes) return file;
+  if (!file.type.startsWith("image/")) throw new Error("Only image files are supported.");
+
+  const image = await loadImageElement(file);
+  const scaleForMaxDimension = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(image.width, image.height));
+  let scale = scaleForMaxDimension;
+  let smallestBlob: Blob | null = null;
+  const qualitySteps = [0.9, 0.82, 0.74, 0.66, 0.58, 0.5, 0.42, 0.35];
+
+  for (let scalePass = 0; scalePass < 6; scalePass++) {
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image canvas context unavailable.");
+    context.drawImage(image, 0, 0, width, height);
+
+    for (const quality of qualitySteps) {
+      const blob = await canvasToBlob(canvas, quality);
+      if (!smallestBlob || blob.size < smallestBlob.size) smallestBlob = blob;
+      if (blob.size <= maxBytes) {
+        return new File([blob], toJpegFileName(file.name), {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        });
+      }
+    }
+
+    scale *= 0.85;
+  }
+
+  if (!smallestBlob) throw new Error("Unable to compress this image.");
+
+  return new File([smallestBlob], toJpegFileName(file.name), {
+    type: "image/jpeg",
+    lastModified: Date.now(),
+  });
+}
+
 // --- API FETCHERS ---
 async function fetchWithAuth(url: string, options: RequestInit = {}, token: string) {
   const response = await fetch(url, {
@@ -440,6 +525,57 @@ export default function Dashboard() {
     });
   }
 
+  function getErrorMessage(err: unknown, fallback: string) {
+    if (err instanceof Error && err.message) return err.message;
+    return fallback;
+  }
+
+  async function prepareImageForUpload(file: File, label: string) {
+    if (!file.type.startsWith("image/")) {
+      throw new Error(`${label}: only image files are allowed.`);
+    }
+
+    if (file.size <= MAX_UPLOAD_BYTES) return file;
+
+    notify("warning", `${label}: file is ${bytesToMb(file.size)}MB. Optimizing to fit 4MB limit...`);
+    let compressed: File;
+    try {
+      compressed = await compressImageToLimit(file, TARGET_UPLOAD_BYTES);
+    } catch {
+      throw new Error(`${label}: compression failed. Please try JPG, PNG, or WebP under 4MB.`);
+    }
+
+    if (compressed.size > MAX_UPLOAD_BYTES) {
+      throw new Error(
+        `${label}: file is ${bytesToMb(compressed.size)}MB after compression, still above 4MB limit.`
+      );
+    }
+
+    if (compressed.size < file.size) {
+      notify("success", `${label}: compressed from ${bytesToMb(file.size)}MB to ${bytesToMb(compressed.size)}MB.`);
+    } else {
+      notify("warning", `${label}: could not reduce size significantly.`);
+    }
+
+    return compressed;
+  }
+
+  function notifyLargeImageSelection(file: File, label: string) {
+    if (!file.type.startsWith("image/")) {
+      notify("error", `${label}: only image files are allowed.`);
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      notify("warning", `${label}: selected ${bytesToMb(file.size)}MB. It will be auto-compressed on upload.`);
+      return;
+    }
+
+    if (file.size > TARGET_UPLOAD_BYTES) {
+      notify("info", `${label}: ${bytesToMb(file.size)}MB selected. Near 4MB limit.`);
+    }
+  }
+
   async function confirmAction(title: string, text: string) {
     const result = await Swal.fire({
       title,
@@ -558,10 +694,11 @@ export default function Dashboard() {
     if (!session) return;
     setIsSubmitting(true);
     try {
-      const finalUpdates = [...updates];
+      const finalUpdates = updates.map((update) => ({ ...update }));
       for (let i = 0; i < finalUpdates.length; i++) {
         if (finalUpdates[i].selectedImage) {
-          const uploadRes = await startUpload([finalUpdates[i].selectedImage!]);
+          const preparedFile = await prepareImageForUpload(finalUpdates[i].selectedImage!, `Attachment ${i + 1}`);
+          const uploadRes = await startUpload([preparedFile]);
           if (uploadRes && uploadRes.length > 0) finalUpdates[i].uploadedImageUrl = uploadRes[0].url;
         }
       }
@@ -604,7 +741,7 @@ export default function Dashboard() {
         .catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
-      notify("error", "Unable to save this briefing.");
+      notify("error", getErrorMessage(err, "Unable to save this briefing."));
       setIsSubmitting(false);
     } finally {
       setIsSubmitting(false);
@@ -618,7 +755,8 @@ export default function Dashboard() {
     try {
       let finalImageUrl: string | null = null;
       if (postImage) {
-        const uploadRes = await startUpload([postImage]);
+        const preparedPostImage = await prepareImageForUpload(postImage, "Post image");
+        const uploadRes = await startUpload([preparedPostImage]);
         if (uploadRes && uploadRes.length > 0) finalImageUrl = uploadRes[0].url;
       }
       const createdPost = await fetchWithAuth(`${API_BASE_URL}/posts`, {
@@ -641,7 +779,7 @@ export default function Dashboard() {
       notify("success", "Post published.");
     } catch (err) {
       console.error(err);
-      notify("error", "Post failed to publish.");
+      notify("error", getErrorMessage(err, "Post failed to publish."));
     } finally { setIsPosting(false); }
   }
 
@@ -771,7 +909,8 @@ export default function Dashboard() {
     if (!session) return;
     setIsUpdatingProfile(true);
     try {
-      const uploadRes = await startUpload([file]);
+      const preparedFile = await prepareImageForUpload(file, type === "avatar" ? "Profile photo" : "Cover photo");
+      const uploadRes = await startUpload([preparedFile]);
       if (uploadRes && uploadRes.length > 0) {
         const url = uploadRes[0].url;
         const newProf = await fetchWithAuth(`${API_BASE_URL}/profiles/me`, {
@@ -784,7 +923,7 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error(err);
-      notify("error", "Image update failed.");
+      notify("error", getErrorMessage(err, "Image update failed."));
     } finally { setIsUpdatingProfile(false); }
   }
 
@@ -1077,7 +1216,16 @@ export default function Dashboard() {
                         <label className="cursor-pointer text-primary hover:text-primary/80 transition-all flex items-center gap-2.5 text-sm font-bold group">
                           <div className="h-9 w-9 flex items-center justify-center rounded-xl bg-primary/5 group-hover:bg-primary/10"><Camera size={18} /></div>
                           Attach Media
-                          <input type="file" accept="image/*" className="hidden" onChange={(e) => setPostImage(e.target.files?.[0] ?? null)} />
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] ?? null;
+                              if (file) notifyLargeImageSelection(file, "Post image");
+                              setPostImage(file);
+                            }}
+                          />
                         </label>
                         <button type="submit" disabled={isPosting || (!postContent.trim() && !postImage)} className="button-primary h-10 px-6 rounded-xl font-bold tracking-tight">
                           {isPosting ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Post Briefing"}
@@ -1288,7 +1436,7 @@ export default function Dashboard() {
                       <div className="w-full h-full bg-gradient-to-tr from-primary/20 via-primary/5 to-transparent" />
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                    <label className="absolute bottom-6 right-8 h-10 px-4 bg-black/60 backdrop-blur-xl border border-white/10 text-white rounded-xl cursor-pointer opacity-0 group-hover:opacity-100 transition-all flex items-center gap-2.5 font-bold text-xs hover:bg-black/80"><Camera size={16} /> Update Cover <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "cover"); }} /></label>
+                    <label className="absolute bottom-6 right-8 h-10 px-4 bg-black/60 backdrop-blur-xl border border-white/10 text-white rounded-xl cursor-pointer opacity-0 group-hover:opacity-100 transition-all flex items-center gap-2.5 font-bold text-xs hover:bg-black/80"><Camera size={16} /> Update Cover <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) { notifyLargeImageSelection(e.target.files[0], "Cover photo"); handleProfileImageUpload(e.target.files[0], "cover"); } }} /></label>
                   </div>
                   <div className="relative px-6 pb-12 sm:px-10 md:px-16">
                     <div className="flex justify-between items-start">
@@ -1296,7 +1444,7 @@ export default function Dashboard() {
                         <div className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative ring-1 ring-primary/5">
                           <img src={userAvatar} className="w-full h-full object-cover" alt="Avatar" />
                         </div>
-                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-[2.5rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-all border-4 border-transparent group-hover:border-primary/20"><Camera size={28} /> <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "avatar"); }} /></label>
+                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-[2.5rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-all border-4 border-transparent group-hover:border-primary/20"><Camera size={28} /> <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) { notifyLargeImageSelection(e.target.files[0], "Profile photo"); handleProfileImageUpload(e.target.files[0], "avatar"); } }} /></label>
                       </div>
                       <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <div className="flex items-center gap-2.5 rounded-xl border border-primary/10 bg-primary/5 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary dark:border-primary/30 dark:bg-primary/15"><LoadingSpinner className="h-3 w-3" /> Syncing</div>}</div>
                     </div>
@@ -1502,7 +1650,18 @@ export default function Dashboard() {
                               <label className="flex h-10 cursor-pointer items-center justify-between rounded-lg border border-dashed border-[color:var(--border)] bg-[color:var(--muted)]/30 px-3 transition-all hover:bg-[color:var(--muted)]/50 dark:border-[#3b5986] dark:bg-[#142842] dark:hover:bg-[#1a3151]">
                                 <span className="text-xs text-[color:var(--muted-foreground)] truncate">{update.selectedImage ? update.selectedImage.name : "Choose file..."}</span>
                                 <ImageIcon size={14} className="text-[color:var(--muted-foreground)]" />
-                                <input type="file" accept="image/*" onChange={(e) => { const newU = [...updates]; newU[idx].selectedImage = e.target.files?.[0] ?? null; setUpdates(newU); }} className="hidden" />
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0] ?? null;
+                                    if (file) notifyLargeImageSelection(file, `Attachment ${idx + 1}`);
+                                    const newU = [...updates];
+                                    newU[idx].selectedImage = file;
+                                    setUpdates(newU);
+                                  }}
+                                  className="hidden"
+                                />
                               </label>
                             </div>
                           </div>
