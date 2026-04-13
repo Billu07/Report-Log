@@ -331,6 +331,7 @@ export default function Dashboard() {
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewingProfile, setViewingProfile] = useState<ProfileRecord | null>(null);
   
   // Compose Report State
   const [reportDate, setReportDate] = useState(format(new Date(), "yyyy-MM-dd"));
