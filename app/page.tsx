@@ -154,15 +154,26 @@ function CleanReport({ text }: { text: string }) {
       {lines.map((line, i) => {
         if (!line.trim()) return null;
         
-        // Image Handling
+        // Image Handling (Retro Folder Link)
         const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
         if (imageMatch) {
           return (
-            <div key={i} className="my-8 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/5 shadow-md group/img relative">
-              <div className="flex items-center justify-center w-full h-[400px] md:h-[500px] bg-[color:var(--muted)]/30">
-                <img src={imageMatch[1]} alt="Attached visual" className="max-h-full max-w-full object-contain transition-transform duration-700 group-hover/img:scale-[1.01]" />
-              </div>
-              <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-white/10 opacity-0 group-hover/img:opacity-100 transition-opacity">Visual Proof</div>
+            <div key={i} className="my-6">
+              <a 
+                href={imageMatch[1]} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 px-5 py-3 rounded-2xl border border-[color:var(--border)] bg-primary/5 text-primary hover:bg-primary/10 hover:shadow-lg transition-all group"
+              >
+                <div className="relative">
+                  {/* Retro Folder Icon Shape */}
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="transition-transform group-hover:scale-110">
+                    <path d="M4 6C4 4.89543 4.89543 4 6 4H10L12 6H18C19.1046 6 20 6.89543 20 8V18C20 19.1046 19.1046 20 18 20H6C4.89543 20 4 19.1046 4 18V6Z" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+                    <path d="M4 10H20" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <span className="text-xs font-black uppercase tracking-[0.2em]">Open Attachment</span>
+              </a>
             </div>
           );
         }
