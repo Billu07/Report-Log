@@ -2,7 +2,7 @@
 "use client";
 
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, formatDistanceToNow } from "date-fns";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
@@ -698,6 +698,7 @@ export default function Dashboard() {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const [notificationsLastSeenAt, setNotificationsLastSeenAt] = useState<number>(0);
   const [focusedPostId, setFocusedPostId] = useState<string | null>(null);
+  const profileViewerOpenGuardRef = useRef(0);
 
   const { startUpload } = useUploadThing("imageUploader");
 
@@ -1109,10 +1110,12 @@ export default function Dashboard() {
       : null;
     if (!normalizedEmail) {
       if (localProfileByName) {
+        profileViewerOpenGuardRef.current = Date.now();
         setViewingProfile(localProfileByName);
         return;
       }
       if (normalizedName) {
+        profileViewerOpenGuardRef.current = Date.now();
         setViewingProfile({
           id: `optimistic-name-${normalizedName.toLowerCase().replace(/\s+/g, "-")}`,
           user_email: "unknown@autolinium.local",
@@ -1129,6 +1132,7 @@ export default function Dashboard() {
 
     const localProfile = profiles.find((member) => member.user_email?.toLowerCase() === normalizedEmail);
     if (localProfile) {
+      profileViewerOpenGuardRef.current = Date.now();
       setViewingProfile(localProfile);
     } else {
       // Open instantly from feed/comment metadata to avoid dead-click UX.
@@ -1140,6 +1144,7 @@ export default function Dashboard() {
         cover_url: null,
         bio: null,
       };
+      profileViewerOpenGuardRef.current = Date.now();
       setViewingProfile(optimisticProfile);
     }
 
@@ -1169,6 +1174,7 @@ export default function Dashboard() {
         }
         return [...prev, normalizedProfile];
       });
+      profileViewerOpenGuardRef.current = Date.now();
       setViewingProfile(normalizedProfile);
     } catch (err) {
       console.error(err);
@@ -1987,7 +1993,10 @@ export default function Dashboard() {
     ? createPortal(
         <div
           className="fixed inset-0 z-[940] flex items-start justify-center overflow-y-auto bg-[#020814]/78 p-3 pt-16 backdrop-blur-md sm:p-6 sm:pt-20"
-          onClick={() => setViewingProfile(null)}
+          onClick={() => {
+            if (Date.now() - profileViewerOpenGuardRef.current < 220) return;
+            setViewingProfile(null);
+          }}
         >
           <motion.div
             initial={{ opacity: 0, y: 16, scale: 0.985 }}
