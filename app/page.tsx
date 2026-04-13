@@ -128,6 +128,14 @@ const EMOJI_OPTIONS = [
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const TARGET_UPLOAD_BYTES = Math.floor(3.8 * 1024 * 1024);
 const MAX_IMAGE_DIMENSION = 2400;
+const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+]);
 
 function bytesToMb(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(2);
@@ -168,7 +176,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
 }
 
 async function compressImageToLimit(file: File, maxBytes: number) {
-  if (file.size <= maxBytes) return file;
+  if (file.size <= maxBytes && SUPPORTED_UPLOAD_MIME_TYPES.has(file.type.toLowerCase())) return file;
   if (!file.type.startsWith("image/")) throw new Error("Only image files are supported.");
 
   const image = await loadImageElement(file);
@@ -210,6 +218,11 @@ async function compressImageToLimit(file: File, maxBytes: number) {
   });
 }
 
+type UploadResultItem = {
+  url?: string | null;
+  ufsUrl?: string | null;
+};
+
 // --- API FETCHERS ---
 async function fetchWithAuth(url: string, options: RequestInit = {}, token: string) {
   const response = await fetch(url, {
@@ -237,19 +250,53 @@ function LoadingSpinner({
   className?: string;
   tone?: "primary" | "light" | "danger";
 }) {
-  const toneClass =
+  const ringClass =
     tone === "light"
-      ? "border-white/25 border-t-white"
+      ? "border-white/25"
       : tone === "danger"
-        ? "border-destructive/25 border-t-destructive"
-        : "border-primary/25 border-t-primary";
+        ? "border-destructive/25"
+        : "border-primary/25";
+  const glowClass =
+    tone === "light"
+      ? "bg-white"
+      : tone === "danger"
+        ? "bg-destructive"
+        : "bg-primary";
   return (
-    <div className={className}>
+    <div className={cn("relative", className)}>
+      <motion.div
+        animate={{ rotate: -360 }}
+        transition={{ repeat: Infinity, duration: 1.35, ease: "linear" }}
+        className={cn("absolute inset-0 rounded-full border border-dashed", ringClass)}
+      />
       <motion.div
         animate={{ rotate: 360 }}
-        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-        className={cn("h-full w-full rounded-full border-2", toneClass)}
+        transition={{ repeat: Infinity, duration: 0.92, ease: "linear" }}
+        className={cn("h-full w-full rounded-full border-2 border-transparent border-t-current border-r-current", tone === "light" ? "text-white" : tone === "danger" ? "text-destructive" : "text-primary")}
       />
+      <motion.div
+        animate={{ opacity: [0.45, 1, 0.45], scale: [0.86, 1, 0.86] }}
+        transition={{ repeat: Infinity, duration: 1.1, ease: "easeInOut" }}
+        className={cn("absolute left-1/2 top-1/2 h-[28%] w-[28%] -translate-x-1/2 -translate-y-1/2 rounded-full", glowClass)}
+      />
+    </div>
+  );
+}
+
+function LoadingRail({ label }: { label: string }) {
+  return (
+    <div className="w-[220px] rounded-2xl border border-primary/20 bg-primary/10 px-3 py-2.5 backdrop-blur-xl dark:border-primary/35 dark:bg-[#123154]">
+      <div className="mb-2 flex items-center gap-2">
+        <LoadingSpinner className="h-3.5 w-3.5" />
+        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">{label}</span>
+      </div>
+      <div className="relative h-1.5 overflow-hidden rounded-full bg-primary/20 dark:bg-primary/30">
+        <motion.div
+          className="absolute inset-y-0 w-2/5 rounded-full bg-gradient-to-r from-primary/20 via-primary to-primary/30"
+          animate={{ x: ["-115%", "265%"] }}
+          transition={{ repeat: Infinity, duration: 1.3, ease: "easeInOut" }}
+        />
+      </div>
     </div>
   );
 }
@@ -526,13 +573,36 @@ export default function Dashboard() {
   }
 
   function getErrorMessage(err: unknown, fallback: string) {
-    if (err instanceof Error && err.message) return err.message;
+    if (err instanceof Error && err.message) {
+      const msg = err.message;
+      if (msg.includes("400")) {
+        return "Upload rejected. Please use JPG/PNG/WebP under 4MB.";
+      }
+      return msg;
+    }
     return fallback;
+  }
+
+  function getUploadUrl(uploadRes: UploadResultItem[] | undefined | null) {
+    if (!uploadRes || uploadRes.length === 0) return null;
+    return uploadRes[0].ufsUrl || uploadRes[0].url || null;
   }
 
   async function prepareImageForUpload(file: File, label: string) {
     if (!file.type.startsWith("image/")) {
       throw new Error(`${label}: only image files are allowed.`);
+    }
+
+    const mimeType = file.type.toLowerCase();
+    const isSupportedMime = SUPPORTED_UPLOAD_MIME_TYPES.has(mimeType);
+
+    if (!isSupportedMime) {
+      notify("info", `${label}: converting ${mimeType || "image"} to JPG for compatibility...`);
+      const converted = await compressImageToLimit(file, TARGET_UPLOAD_BYTES);
+      if (converted.size > MAX_UPLOAD_BYTES) {
+        throw new Error(`${label}: converted file is still above 4MB. Please use a smaller image.`);
+      }
+      return converted;
     }
 
     if (file.size <= MAX_UPLOAD_BYTES) return file;
@@ -564,6 +634,10 @@ export default function Dashboard() {
     if (!file.type.startsWith("image/")) {
       notify("error", `${label}: only image files are allowed.`);
       return;
+    }
+
+    if (!SUPPORTED_UPLOAD_MIME_TYPES.has(file.type.toLowerCase())) {
+      notify("info", `${label}: this format will be converted to JPG on upload.`);
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
@@ -624,6 +698,16 @@ export default function Dashboard() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const shouldLockScroll = Boolean(viewingImage || viewingProfile);
+    const previousOverflow = document.body.style.overflow;
+    if (shouldLockScroll) document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mounted, viewingImage, viewingProfile]);
 
   // Load Data
   useEffect(() => {
@@ -699,7 +783,8 @@ export default function Dashboard() {
         if (finalUpdates[i].selectedImage) {
           const preparedFile = await prepareImageForUpload(finalUpdates[i].selectedImage!, `Attachment ${i + 1}`);
           const uploadRes = await startUpload([preparedFile]);
-          if (uploadRes && uploadRes.length > 0) finalUpdates[i].uploadedImageUrl = uploadRes[0].url;
+          const uploadedUrl = getUploadUrl(uploadRes as UploadResultItem[] | null | undefined);
+          if (uploadedUrl) finalUpdates[i].uploadedImageUrl = uploadedUrl;
         }
       }
       const payload = {
@@ -757,7 +842,7 @@ export default function Dashboard() {
       if (postImage) {
         const preparedPostImage = await prepareImageForUpload(postImage, "Post image");
         const uploadRes = await startUpload([preparedPostImage]);
-        if (uploadRes && uploadRes.length > 0) finalImageUrl = uploadRes[0].url;
+        finalImageUrl = getUploadUrl(uploadRes as UploadResultItem[] | null | undefined);
       }
       const createdPost = await fetchWithAuth(`${API_BASE_URL}/posts`, {
         method: "POST",
@@ -911,8 +996,8 @@ export default function Dashboard() {
     try {
       const preparedFile = await prepareImageForUpload(file, type === "avatar" ? "Profile photo" : "Cover photo");
       const uploadRes = await startUpload([preparedFile]);
-      if (uploadRes && uploadRes.length > 0) {
-        const url = uploadRes[0].url;
+      const url = getUploadUrl(uploadRes as UploadResultItem[] | null | undefined);
+      if (url) {
         const newProf = await fetchWithAuth(`${API_BASE_URL}/profiles/me`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1021,6 +1106,93 @@ export default function Dashboard() {
             </div>
           </motion.div>
           <div className="absolute inset-0 -z-10" onClick={() => setViewingImage(null)} />
+        </div>,
+        document.body
+      )
+    : null;
+  const publicProfilePosts = viewingProfile
+    ? posts.filter((post) => post.author_email === viewingProfile.user_email).slice(0, 5)
+    : [];
+  const profileViewer = mounted && viewingProfile
+    ? createPortal(
+        <div
+          className="fixed inset-0 z-[520] flex items-center justify-center bg-[#020814]/74 p-4 sm:p-6 md:p-10 backdrop-blur-md"
+          onClick={() => setViewingProfile(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.985 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="relative flex h-[min(90vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-[color:var(--border)]/80 bg-[color:var(--card)] shadow-[0_28px_80px_-32px_rgba(0,0,0,0.68)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="relative h-44 overflow-hidden border-b border-[color:var(--border)] md:h-56">
+              {viewingProfile.cover_url ? (
+                <img src={viewingProfile.cover_url} className="h-full w-full object-cover" alt="" />
+              ) : (
+                <div className="h-full w-full bg-gradient-to-tr from-primary/25 via-primary/10 to-transparent" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/55" />
+              <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border border-white/25 bg-black/35 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-white/90 backdrop-blur-xl sm:left-6 sm:top-6">
+                <Activity size={12} />
+                Team Profile
+              </div>
+              <button
+                onClick={() => setViewingProfile(null)}
+                className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/40 text-white transition-all hover:bg-black/65 sm:right-6 sm:top-6"
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className="grid min-h-0 flex-1 gap-0 md:grid-cols-[280px_minmax(0,1fr)]">
+              <aside className="border-b border-[color:var(--border)] bg-[color:var(--muted)]/35 px-5 py-6 md:border-b-0 md:border-r md:px-6 md:py-8">
+                <div className="mx-auto -mt-20 h-28 w-28 overflow-hidden rounded-[1.65rem] border-[5px] border-[color:var(--card)] bg-[color:var(--card)] shadow-2xl md:mx-0 md:h-32 md:w-32">
+                  <img src={viewingProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingProfile.full_name)}&background=random&size=128&bold=true`} className="h-full w-full object-cover" alt="" />
+                </div>
+                <div className="mt-5">
+                  <h2 className="font-heading text-2xl font-black tracking-tight md:text-[1.75rem]">{viewingProfile.full_name}</h2>
+                  <p className="mt-1 break-all text-xs font-semibold text-[color:var(--muted-foreground)]">{viewingProfile.user_email}</p>
+                </div>
+                {viewingProfile.bio ? (
+                  <div className="mt-5 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/88 p-4 dark:bg-[#122742]/90">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-primary/80">Bio</p>
+                    <p className="mt-2 text-sm leading-relaxed text-[color:var(--muted-foreground)]">{viewingProfile.bio}</p>
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-2xl border border-dashed border-[color:var(--border)] p-4 text-xs text-[color:var(--muted-foreground)]">
+                    No bio added yet.
+                  </div>
+                )}
+              </aside>
+
+              <section className="min-h-0 overflow-y-auto custom-scrollbar px-5 py-6 md:px-7 md:py-8">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="font-heading text-xl font-black tracking-tight">Latest Feed Posts</h3>
+                  <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                    {publicProfilePosts.length} visible
+                  </span>
+                </div>
+                <div className="flex flex-col gap-4 pb-2">
+                  {publicProfilePosts.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-5 py-10 text-center text-sm italic text-[color:var(--muted-foreground)]">
+                      No feed activity from this teammate yet.
+                    </div>
+                  ) : (
+                    publicProfilePosts.map((post) => (
+                      <article key={post.id} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 p-5 shadow-sm dark:border-[#3a5885] dark:bg-[#112640]">
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[color:var(--foreground)]/90">{post.content}</p>
+                        <div className="mt-4 text-[10px] font-black uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]/80">
+                          {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          </motion.div>
         </div>,
         document.body
       )
@@ -1446,7 +1618,7 @@ export default function Dashboard() {
                         </div>
                         <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-[2.5rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-all border-4 border-transparent group-hover:border-primary/20"><Camera size={28} /> <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) { notifyLargeImageSelection(e.target.files[0], "Profile photo"); handleProfileImageUpload(e.target.files[0], "avatar"); } }} /></label>
                       </div>
-                      <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <div className="flex items-center gap-2.5 rounded-xl border border-primary/10 bg-primary/5 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary dark:border-primary/30 dark:bg-primary/15"><LoadingSpinner className="h-3 w-3" /> Syncing</div>}</div>
+                      <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <LoadingRail label="Syncing Profile" />}</div>
                     </div>
                     <form onSubmit={(e) => handleProfileUpdate(e, (e.currentTarget.elements.namedItem('bio') as HTMLTextAreaElement).value, (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value)} className="mt-8 flex flex-col gap-8">
                       <div><input name="name" defaultValue={profile.full_name} className="font-heading w-full bg-transparent text-3xl font-extrabold tracking-tight text-[color:var(--foreground)] outline-none transition-all focus:border-primary/30 border-b-2 border-transparent sm:text-4xl lg:text-5xl" /> <div className="mt-2 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-primary opacity-80">{session.user.email}</div></div>
@@ -1734,83 +1906,7 @@ export default function Dashboard() {
               );
             })()}
 
-            {/* PUBLIC PROFILE MODAL */}
-            <AnimatePresence>
-              {viewingProfile && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 md:p-12 bg-black/60 backdrop-blur-sm">
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.98, y: 20 }} 
-                    animate={{ opacity: 1, scale: 1, y: 0 }} 
-                    exit={{ opacity: 0, scale: 0.98, y: 20 }}
-                    className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-[3rem] border border-white/10 bg-[color:var(--card)] shadow-2xl dark:border-[#3a5885] dark:bg-[#0f223d]"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <header className="absolute top-6 right-8 z-50">
-                      <button 
-                        onClick={() => setViewingProfile(null)}
-                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-black/40 backdrop-blur-md text-white border border-white/10 hover:bg-black/60 transition-all"
-                      >
-                        <X size={20} />
-                      </button>
-                    </header>
-
-                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                      <div className="relative h-48 md:h-64 bg-[color:var(--muted)]">
-                        {viewingProfile.cover_url ? (
-                          <img src={viewingProfile.cover_url} className="w-full h-full object-cover" alt="" />
-                        ) : (
-                          <div className="w-full h-full bg-gradient-to-tr from-primary/20 via-primary/5 to-transparent" />
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                      </div>
-
-                      <div className="relative px-6 pb-12 sm:px-10 md:px-16">
-                        <div className="relative -mt-16 md:-mt-20 mb-8">
-                          <div className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative">
-                            <img src={viewingProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingProfile.full_name)}&background=random&size=128&bold=true`} className="w-full h-full object-cover" alt="" />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-6">
-                          <div>
-                            <h2 className="font-heading text-4xl font-extrabold tracking-tight">{viewingProfile.full_name}</h2>
-                            <div className="text-sm font-bold text-primary opacity-80 uppercase tracking-[0.2em] mt-1">{viewingProfile.user_email}</div>
-                          </div>
-
-                          {viewingProfile.bio && (
-                            <div className="max-w-3xl rounded-[1.5rem] border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#39567f] dark:bg-[#122740]">
-                              <label className="text-[10px] font-bold uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] mb-3 block opacity-60">Teammate Bio</label>
-                              <p className="text-lg font-medium leading-relaxed opacity-90 italic">"{viewingProfile.bio}"</p>
-                            </div>
-                          )}
-
-                          <div className="mt-8">
-                            <h3 className="font-heading text-xl font-bold mb-6 tracking-tight flex items-center gap-3">
-                              <Activity size={20} className="text-primary"/> Recent Posts
-                            </h3>
-                            <div className="flex flex-col gap-6">
-                              {posts.filter(p => p.author_email === viewingProfile.user_email).length === 0 ? (
-                                <div className="py-10 border border-dashed border-[color:var(--border)] rounded-[2rem] text-center text-[color:var(--muted-foreground)] text-sm italic">No transmissions shared yet.</div>
-                              ) : (
-                                posts.filter(p => p.author_email === viewingProfile.user_email).slice(0, 5).map(post => (
-                                  <div key={post.id} className="rounded-[2rem] border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm dark:border-[#39567f] dark:bg-[#122740]">
-                                    <p className="text-sm font-medium leading-relaxed opacity-90 mb-4">{post.content}</p>
-                                    <div className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-40">
-                                      {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
-                                    </div>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                  <div className="absolute inset-0 -z-10" onClick={() => setViewingProfile(null)} />
-                </div>
-              )}
-            </AnimatePresence>
+            {profileViewer}
 
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (

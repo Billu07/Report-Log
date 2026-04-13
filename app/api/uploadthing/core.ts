@@ -17,8 +17,8 @@ export const ourFileRouter = {
       return { };
     })
     .onUploadComplete(async ({ file }) => {
-      console.log("UploadThing: Upload complete", file.url);
-      return { url: file.url };
+      console.log("UploadThing: Upload complete", file.ufsUrl);
+      return { ufsUrl: file.ufsUrl, url: file.ufsUrl };
     }),
 } satisfies FileRouter;
 
