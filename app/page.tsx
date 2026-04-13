@@ -361,7 +361,14 @@ export default function Dashboard() {
 
   // Load Data
   useEffect(() => {
-    if (!session) { setIsLoading(false); return; }
+    if (!session) { 
+      setIsLoading(false); 
+      setReports([]);
+      setPosts([]);
+      setProfile(null);
+      setAllProfiles([]);
+      return; 
+    }
     let isCancelled = false;
     async function loadAll() {
       setIsLoading(true);

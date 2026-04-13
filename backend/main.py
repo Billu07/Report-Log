@@ -30,6 +30,7 @@ logger = logging.getLogger("autolinium-api")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+CEO_EMAIL = os.getenv("CEO_EMAIL", "").lower()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
@@ -256,6 +257,7 @@ async def get_my_profile(user: Any = Depends(get_current_user)):
 
 @app.get("/profiles/all", response_model=list[ProfileRecord])
 async def get_all_profiles(user: Any = Depends(get_current_user)):
+    # All members can see profiles for the Public Profile feature
     resp = await run_in_threadpool(supabase.table("profiles").select("*").execute)
     return [ProfileRecord(**p) for p in resp.data or []]
 
@@ -274,7 +276,12 @@ async def update_profile_me(update: ProfileUpdate, user: Any = Depends(get_curre
 
 @app.get("/reports", response_model=list[DailyReportRecord])
 async def get_all_reports(user: Any = Depends(get_current_user)):
-    resp = await run_in_threadpool(supabase.table("daily_reports").select("*").order("report_date", desc=True).execute)
+    query = supabase.table("daily_reports").select("*")
+    # SECURITY: Filter by author_email unless user is CEO
+    if user.email.lower() != CEO_EMAIL:
+        query = query.eq("author_email", user.email)
+    
+    resp = await run_in_threadpool(query.order("report_date", desc=True).execute)
     return [DailyReportRecord(**r) for r in resp.data or []]
 
 @app.post("/submit-report", response_model=SubmitReportResponse)
