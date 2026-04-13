@@ -451,74 +451,55 @@ function LoadingRail({ label }: { label: string }) {
 function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: string) => void }) {
   const lines = text.split("\n");
   return (
-    <div className="flex flex-col gap-4 text-[color:var(--foreground)] font-sans antialiased">
+    <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-[color:var(--foreground)] font-mono">
       {lines.map((line, i) => {
         if (!line.trim()) return null;
 
         const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
         if (imageMatch) {
           return (
-            <div key={i} className="my-3">
+            <div key={i} className="pt-2">
               <button 
                 onClick={() => onViewImage(imageMatch[1])}
-                className="inline-flex items-center gap-2.5 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-primary transition-colors hover:bg-primary/20"
+                className="inline-flex items-center gap-2 border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--foreground)] transition-colors hover:border-primary/30 hover:text-primary"
               >
-                <ImageIcon size={13} />
-                View Attachment
+                <ImageIcon size={12} />
+                Attachment
               </button>
             </div>
           );
         }
 
-        const isHeader = line.startsWith("#") || line.match(/^\d\.\s/);
+        const isHeader = line.startsWith("#") || line.match(/^##?\s/) || line.match(/^\d\.\s/);
         const isSubHeader = line.match(/^\s*-\s\w+:/);
         const isBullet = line.trim().startsWith("-") || line.trim().startsWith("*");
 
         const content = line.replace(/^[#\-*]+\s*/, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
 
         if (isHeader) {
-          return <h3 key={i} className="mt-4 border-b border-primary/15 pb-2 font-heading text-base font-black tracking-tight text-primary sm:text-lg">{content}</h3>;
+          return (
+            <h3 key={i} className="mt-2 border-b border-[color:var(--border)] pb-1.5 text-sm font-bold uppercase tracking-[0.08em] text-primary">
+              {content}
+            </h3>
+          );
         }
 
         if (isSubHeader) {
           const [label, ...rest] = content.split(":");
-          const normalizedLabel = label.trim().toLowerCase();
           const value = rest.join(":").trim();
-
-          if (normalizedLabel === "completion") {
-            const completion = normalizeCompletionPercent(value);
-            return (
-              <div key={i} className="rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5 dark:bg-primary/10">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Completion</span>
-                  <span className="text-xs font-black text-[color:var(--foreground)]">{completion !== null ? `${completion}%` : value}</span>
-                </div>
-                {completion !== null && (
-                  <div className="h-1.5 overflow-hidden rounded-full bg-primary/15 dark:bg-primary/25">
-                    <div className="h-full rounded-full bg-gradient-to-r from-primary/55 to-primary" style={{ width: `${completion}%` }} />
-                  </div>
-                )}
-              </div>
-            );
-          }
-
           return (
-            <div key={i} className="grid gap-1 rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/25 px-3 py-2.5 dark:border-[#355279] dark:bg-[#122e4b]/70 sm:grid-cols-[130px_1fr] sm:items-start sm:gap-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-primary">{label.trim()}</span>
-              <span className="text-sm font-medium leading-relaxed text-[color:var(--foreground)]">{value}</span>
+            <div key={i} className="grid grid-cols-[120px_1fr] gap-2 border-b border-dotted border-[color:var(--border)] py-1">
+              <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-primary">{label.trim()}</span>
+              <span className="text-[13px]">{value}</span>
             </div>
           );
         }
 
         if (isBullet) {
-          return (
-            <div key={i} className="relative pl-5 text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] before:absolute before:left-0 before:top-2.5 before:h-1.5 before:w-1.5 before:rounded-full before:bg-primary/40">
-              {content}
-            </div>
-          );
+          return <p key={i} className="pl-2 text-[13px] text-[color:var(--foreground)]">- {content}</p>;
         }
 
-        return <p key={i} className="text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)]">{content}</p>;
+        return <p key={i} className="text-[13px] text-[color:var(--foreground)]">{content}</p>;
       })}
     </div>
   );
@@ -1925,6 +1906,8 @@ export default function Dashboard() {
         .filter((report) => report.author_email === viewingProfile.user_email)
         .sort((a, b) => +new Date(b.report_date) - +new Date(a.report_date))
     : [];
+  const myReportCapsules = [...myReports].sort((a, b) => +new Date(b.report_date) - +new Date(a.report_date));
+  const publicReportCapsules = [...publicProfileReports].sort((a, b) => +new Date(b.report_date) - +new Date(a.report_date));
 
   const userAvatar = profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || session.user.email || "U")}&background=random`;
   const attachmentViewer = mounted && viewingImage
@@ -2117,8 +2100,8 @@ export default function Dashboard() {
                         No brief capsules visible yet.
                       </div>
                     ) : (
-                      <div className="flex flex-wrap gap-2.5">
-                        {publicProfileReports.slice(0, 18).map((report) => (
+                      <div className="flex flex-wrap gap-2">
+                        {publicReportCapsules.slice(0, 24).map((report) => (
                           <button
                             key={report.id}
                             type="button"
@@ -2126,7 +2109,7 @@ export default function Dashboard() {
                               setViewingProfile(null);
                               setSelectedReport(report);
                             }}
-                            className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-[color:var(--foreground)] transition-all hover:border-primary/25 hover:bg-primary/10 hover:text-primary dark:border-[#3a5885] dark:bg-[#112640]"
+                            className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[color:var(--foreground)] transition-all hover:border-primary/25 hover:text-primary dark:border-[#3a5885] dark:bg-[#112640]"
                           >
                             {format(parseISO(report.report_date), "MMM d")}
                           </button>
@@ -2989,12 +2972,12 @@ export default function Dashboard() {
                     {myReports.length === 0 ? (
                       <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-8 text-center text-xs italic text-[color:var(--muted-foreground)]">No reports recorded yet.</div>
                     ) : (
-                      <div className="flex flex-wrap gap-2.5">
-                        {myReports.slice(0, 30).map((report) => (
+                      <div className="flex flex-wrap gap-2">
+                        {myReportCapsules.slice(0, 30).map((report) => (
                           <button
                             key={report.id}
                             onClick={() => setSelectedReport(report)}
-                            className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--foreground)] transition-all hover:border-primary/30 hover:bg-primary/10 hover:text-primary dark:border-[#3b5986] dark:bg-[#122844]"
+                            className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[color:var(--foreground)] transition-all hover:border-primary/30 hover:text-primary dark:border-[#3b5986] dark:bg-[#122844]"
                           >
                             {format(parseISO(report.report_date), "MMM d")}
                           </button>
@@ -3345,46 +3328,14 @@ export default function Dashboard() {
               const authorProfile = profiles.find(p => p.user_email === selectedReport.author_email);
               const reportAvatar = authorProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedReport.author_name)}&background=random&size=48&bold=true`;
               const structuredUpdates = parseReportUpdates(selectedReport.raw_text);
-              const metrics = getReportMetrics(structuredUpdates);
-              const metricCards = [
-                {
-                  id: "completion",
-                  label: "Completion",
-                  value: metrics.averageCompletion !== null ? `${metrics.averageCompletion}%` : "Not set",
-                  helper: metrics.averageCompletion !== null ? "Average of provided project completion values" : "Set completion in project updates",
-                  icon: Trophy,
-                  progress: metrics.averageCompletion,
-                },
-                {
-                  id: "projects",
-                  label: "Projects",
-                  value: String(metrics.totalProjects),
-                  helper: "Tracked in this briefing",
-                  icon: FileText,
-                },
-                {
-                  id: "next",
-                  label: "Next Steps",
-                  value: String(metrics.readyNextSteps),
-                  helper: "Projects with action plan",
-                  icon: CheckCircle2,
-                },
-                {
-                  id: "blockers",
-                  label: "Blockers",
-                  value: String(metrics.blockersCount),
-                  helper: metrics.blockersCount > 0 ? "Requires attention" : "No blockers reported",
-                  icon: Activity,
-                },
-              ];
               
               return (
-                <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex w-full max-w-5xl flex-col gap-10 pb-6">
-                  <div className="card-elevated rounded-[2rem] border-primary/10 bg-gradient-to-br from-[color:var(--card)] via-[color:var(--card)] to-primary/5 p-5 shadow-2xl dark:border-[#2f4a72] dark:from-[#10243f] dark:via-[#0e223a] dark:to-[#112e4f] sm:p-8 md:rounded-[2.6rem] md:p-10">
-                    <div className="mb-8 flex flex-col justify-between gap-6 border-b border-[color:var(--border)] pb-8 lg:flex-row lg:items-end">
-                      <div>
-                        <div className="mb-5 flex items-center gap-3">
-                          <button 
+                <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex w-full max-w-3xl flex-col gap-6 pb-6">
+                  <div className="rounded-2xl border-2 border-[color:var(--border)] bg-[#f4edd4] p-4 shadow-xl dark:bg-[#111a2b] sm:p-6">
+                    <div className="mb-4 border-b-2 border-dotted border-[color:var(--border)] pb-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <button
                             type="button"
                             onClick={() => {
                               void openProfileViewer({
@@ -3393,120 +3344,50 @@ export default function Dashboard() {
                                 avatarUrl: reportAvatar,
                               });
                             }}
-                            className="h-10 w-10 rounded-2xl overflow-hidden shadow-lg shadow-primary/10 ring-2 ring-primary/5 hover:scale-105 transition-transform"
+                            className="h-8 w-8 overflow-hidden rounded border border-[color:var(--border)]"
                           >
-                            <img src={reportAvatar} alt="" className="h-full w-full object-cover" /> 
+                            <img src={reportAvatar} alt="" className="h-full w-full object-cover" />
                           </button>
-                          <div className="text-left">
-                            <button 
-                              type="button"
-                              onClick={() => {
-                                void openProfileViewer({
-                                  email: selectedReport.author_email,
-                                  fullName: selectedReport.author_name,
-                                  avatarUrl: reportAvatar,
-                                });
-                              }}
-                              className="font-black text-sm tracking-tight hover:text-primary transition-colors"
-                            >
-                              {selectedReport.author_name}
-                            </button>
-                            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void openProfileViewer({
+                                email: selectedReport.author_email,
+                                fullName: selectedReport.author_name,
+                                avatarUrl: reportAvatar,
+                              });
+                            }}
+                            className="text-xs font-bold uppercase tracking-[0.08em] hover:text-primary"
+                          >
+                            {selectedReport.author_name}
+                          </button>
                         </div>
-                        <h1 className="mb-3 font-heading text-3xl font-black leading-tight tracking-tight sm:text-4xl">Daily Briefing</h1>
-                        <div className="flex items-center gap-2.5 text-[11px] font-black uppercase tracking-[0.22em] text-[color:var(--muted-foreground)]">
-                          <Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}
-                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--muted-foreground)]">Daily Report</span>
                       </div>
-                      <div className="flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-[11px] font-semibold text-[color:var(--muted-foreground)] dark:bg-primary/20">
-                        <img src="/logo.png" alt="Logo" className="h-8 w-8 object-contain" />
-                        <span>Autolinium Execution Ledger</span>
+                      <div className="mt-2 text-[11px] font-bold uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                        {format(parseISO(selectedReport.report_date), "EEE, MMM d, yyyy")}
                       </div>
                     </div>
 
-                    <div className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      {metricCards.map((metric) => {
-                        const Icon = metric.icon;
-                        return (
-                          <div key={metric.id} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/85 p-4 shadow-sm backdrop-blur-sm dark:border-[#36527c] dark:bg-[#0f2744]/85">
-                            <div className="mb-2 flex items-center justify-between">
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">{metric.label}</span>
-                              <Icon size={14} className="text-primary" />
-                            </div>
-                            <div className="text-2xl font-black tracking-tight text-[color:var(--foreground)]">{metric.value}</div>
-                            <div className="mt-1 text-[11px] font-medium text-[color:var(--muted-foreground)]">{metric.helper}</div>
-                            {typeof metric.progress === "number" && (
-                              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-primary/15 dark:bg-primary/25">
-                                <div
-                                  className="h-full rounded-full bg-gradient-to-r from-primary/55 to-primary"
-                                  style={{ width: `${metric.progress}%` }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <section className="mb-8 rounded-[1.8rem] border border-[color:var(--border)] bg-[color:var(--card)]/82 p-5 dark:border-[#36527c] dark:bg-[#102740]/90 sm:p-7">
-                      <h4 className="mb-5 flex items-center gap-2.5 text-xs font-black uppercase tracking-[0.22em] text-primary">
-                        <Sparkles size={14} /> Professional Summary
-                      </h4>
+                    <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--card)]/55 p-3 sm:p-4">
                       <CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} />
-                    </section>
+                    </div>
 
-                    <section className="rounded-[1.8rem] border border-primary/15 bg-primary/5 p-5 shadow-inner dark:border-primary/30 dark:bg-[#10263f] sm:p-7">
-                      <h4 className="mb-6 flex items-center gap-2.5 text-xs font-black uppercase tracking-[0.22em] text-primary">
-                        <FileText size={14} /> Structured Execution Notes
-                      </h4>
-                      {structuredUpdates.length === 0 ? (
-                        <span className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-[color:var(--muted-foreground)] italic">
-                          "{selectedReport.raw_text}"
-                        </span>
-                      ) : (
-                        <div className="space-y-4">
-                          {structuredUpdates.map((update, idx) => {
-                            const completion = normalizeCompletionPercent(update.completion_percent);
-                            return (
-                              <article key={`${update.project_name}-${idx}`} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 p-4 dark:border-[#355279] dark:bg-[#102842]/92 sm:p-5">
-                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                  <h5 className="text-sm font-black uppercase tracking-[0.12em] text-primary">{update.project_name}</h5>
-                                  {completion !== null ? (
-                                    <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-primary">
-                                      {completion}% complete
-                                    </span>
-                                  ) : (
-                                    <span className="rounded-full border border-[color:var(--border)] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
-                                      completion not set
-                                    </span>
-                                  )}
-                                </div>
-                                {completion !== null && (
-                                  <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-primary/15 dark:bg-primary/25">
-                                    <div className="h-full rounded-full bg-gradient-to-r from-primary/55 to-primary" style={{ width: `${completion}%` }} />
-                                  </div>
-                                )}
-                                <div className="space-y-2 text-sm leading-relaxed text-[color:var(--muted-foreground)]">
-                                  <p><span className="font-bold text-[color:var(--foreground)]">Achievements:</span> {update.work_notes || "No notes provided."}</p>
-                                  {update.next_steps && <p><span className="font-bold text-[color:var(--foreground)]">Next Steps:</span> {update.next_steps}</p>}
-                                  {update.blockers && <p><span className="font-bold text-[color:var(--foreground)]">Blockers:</span> {update.blockers}</p>}
-                                  {update.image_url && (
-                                    <button
-                                      onClick={() => setViewingImage(update.image_url!)}
-                                      className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-primary transition-colors hover:bg-primary/20"
-                                    >
-                                      <ImageIcon size={12} />
-                                      View Attachment
-                                    </button>
-                                  )}
-                                </div>
-                              </article>
-                            );
-                          })}
+                    {structuredUpdates.length > 0 && (
+                      <div className="mt-4 rounded-md border border-dashed border-[color:var(--border)] bg-[color:var(--card)]/45 p-3">
+                        <h4 className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-primary">Submitted Fields</h4>
+                        <div className="space-y-2 text-[12px] font-mono">
+                          {structuredUpdates.map((update, idx) => (
+                            <div key={`${update.project_name}-${idx}`} className="border-b border-dotted border-[color:var(--border)] pb-2 last:border-b-0">
+                              <p className="font-bold uppercase tracking-[0.06em] text-primary">{update.project_name}</p>
+                              <p>{update.work_notes}</p>
+                              {update.next_steps && <p className="text-[color:var(--muted-foreground)]">Next: {update.next_steps}</p>}
+                              {update.blockers && <p className="text-[color:var(--muted-foreground)]">Blockers: {update.blockers}</p>}
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </section>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               );
