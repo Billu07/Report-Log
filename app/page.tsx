@@ -54,6 +54,7 @@ type ReportRecord = {
   id: string;
   report_date: string;
   author_name: string;
+  author_email?: string | null;
   raw_text: string;
   formatted_report: string;
   image_url?: string | null;
@@ -1041,14 +1042,19 @@ export default function Dashboard() {
                 </div>
                 {reportsViewMode === "list" ? (
                   <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
-                    {reportsToShow.map((report) => (
-                      <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated flex cursor-pointer flex-col p-8 text-left hover:shadow-2xl hover:border-primary/20 rounded-[2rem] transition-all duration-500 bg-gradient-to-br from-[color:var(--card)] to-transparent group">
-                        <div className="mb-5 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1.5 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-xl bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
-                        <h3 className="mb-4 line-clamp-2 font-heading text-xl font-bold tracking-tight leading-tight group-hover:text-primary transition-colors">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
-                        {!selectedAuthor && isCEO && <div className="mb-5 flex items-center gap-3"><img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(report.author_name)}&background=random&size=32&bold=true`} alt="" className="h-6 w-6 rounded-lg shadow-sm" /><span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">{report.author_name}</span></div>}
-                        <p className="mt-auto line-clamp-3 text-sm font-medium text-[color:var(--muted-foreground)] opacity-70 leading-relaxed italic border-l-2 border-[color:var(--border)] pl-4">"{JSON.parse(report.raw_text || "[]")[0]?.work_notes || report.raw_text}"</p>
-                      </button>
-                    ))}
+                    {reportsToShow.map((report) => {
+                      const authorProfile = profiles.find(p => p.user_email === report.author_email);
+                      const reportAvatar = authorProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(report.author_name)}&background=random&size=32&bold=true`;
+                      
+                      return (
+                        <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated flex cursor-pointer flex-col p-8 text-left hover:shadow-2xl hover:border-primary/20 rounded-[2rem] transition-all duration-500 bg-gradient-to-br from-[color:var(--card)] to-transparent group">
+                          <div className="mb-5 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1.5 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-xl bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
+                          <h3 className="mb-4 line-clamp-2 font-heading text-xl font-bold tracking-tight leading-tight group-hover:text-primary transition-colors">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
+                          {!selectedAuthor && isCEO && <div className="mb-5 flex items-center gap-3"><img src={reportAvatar} alt="" className="h-6 w-6 rounded-lg shadow-sm object-cover" /><span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">{report.author_name}</span></div>}
+                          <p className="mt-auto line-clamp-3 text-sm font-medium text-[color:var(--muted-foreground)] opacity-70 leading-relaxed italic border-l-2 border-[color:var(--border)] pl-4">"{JSON.parse(report.raw_text || "[]")[0]?.work_notes || report.raw_text}"</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="card-elevated p-8 rounded-[2.5rem] border-primary/5 bg-[color:var(--card)]/80 backdrop-blur-xl shadow-xl max-w-5xl mx-auto">
@@ -1184,54 +1190,80 @@ export default function Dashboard() {
              )}
 
             {/* REPORT DETAIL VIEW */}
-            {!isLoading && selectedReport && !isComposing && (
-              <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-4xl flex-col gap-10">
-                <div className="card-elevated p-12 md:p-16 rounded-[3.5rem] border-primary/5 shadow-2xl bg-gradient-to-br from-[color:var(--card)] to-transparent">
-                  <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
-                    <div>
-                      <div className="flex items-center gap-3 mb-6"><img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(selectedReport.author_name)}&background=random&size=48&bold=true`} alt="" className="h-10 w-10 rounded-2xl shadow-lg shadow-primary/10 ring-2 ring-primary/5" /> <div><div className="font-black text-sm tracking-tight">{selectedReport.author_name}</div> <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div></div></div>
-                      <h1 className="font-heading text-5xl font-black tracking-tighter leading-none mb-4">Daily Briefing</h1>
-                      <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] opacity-60"><Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}</div>
+            {!isLoading && selectedReport && !isComposing && (() => {
+              const authorProfile = profiles.find(p => p.user_email === selectedReport.author_email);
+              const reportAvatar = authorProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedReport.author_name)}&background=random&size=48&bold=true`;
+              
+              return (
+                <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-4xl flex-col gap-10">
+                  <div className="card-elevated p-12 md:p-16 rounded-[3.5rem] border-primary/5 shadow-2xl bg-gradient-to-br from-[color:var(--card)] to-transparent">
+                    <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
+                      <div>
+                        <div className="flex items-center gap-3 mb-6">
+                          <img src={reportAvatar} alt="" className="h-10 w-10 rounded-2xl shadow-lg shadow-primary/10 ring-2 ring-primary/5 object-cover" /> 
+                          <div><div className="font-black text-sm tracking-tight">{selectedReport.author_name}</div> <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div></div>
+                        </div>
+                        <h1 className="font-heading text-5xl font-black tracking-tighter leading-none mb-4">Daily Briefing</h1>
+                        <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] opacity-60"><Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}</div>
+                      </div>
+                      <div className="flex h-16 w-16 items-center justify-center group-hover:scale-110 transition-transform duration-500 p-2"><img src="/logo.png" alt="Logo" className="h-full w-full object-contain" /></div>
                     </div>
-                    <div className="flex h-16 w-16 items-center justify-center group-hover:scale-110 transition-transform duration-500 p-2"><img src="/logo.png" alt="Logo" className="h-full w-full object-contain" /></div>
+                    <div className="mb-16"><CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} /></div>
+                    <div className="rounded-[2.5rem] border-2 border-primary/5 bg-primary/5 p-10 shadow-inner">
+                      <h4 className="mb-8 flex items-center gap-3 font-heading text-sm font-black uppercase tracking-[0.3em] text-primary/60"><FileText size={18} /> Raw Work Notes</h4>
+                      <div className="space-y-10">{(() => { try { const parsed = JSON.parse(selectedReport.raw_text); return parsed.map((p: any, i: number) => ( <div key={i} className="flex flex-col gap-3 relative pl-6 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary/10 before:rounded-full"><span className="text-xs font-black uppercase tracking-[0.2em] text-primary">{p.project_name}</span> <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed">{p.work_notes}</span></div> )); } catch { return <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed italic">"{selectedReport.raw_text}"</span>; } })()}</div>
+                    </div>
                   </div>
-                  <div className="mb-16"><CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} /></div>
-                  <div className="rounded-[2.5rem] border-2 border-primary/5 bg-primary/5 p-10 shadow-inner">
-                    <h4 className="mb-8 flex items-center gap-3 font-heading text-sm font-black uppercase tracking-[0.3em] text-primary/60"><FileText size={18} /> Raw Work Notes</h4>
-                    <div className="space-y-10">{(() => { try { const parsed = JSON.parse(selectedReport.raw_text); return parsed.map((p: any, i: number) => ( <div key={i} className="flex flex-col gap-3 relative pl-6 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary/10 before:rounded-full"><span className="text-xs font-black uppercase tracking-[0.2em] text-primary">{p.project_name}</span> <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed">{p.work_notes}</span></div> )); } catch { return <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed italic">"{selectedReport.raw_text}"</span>; } })()}</div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
+                </motion.div>
+              );
+            })()}
 
-            {/* IMMERSIVE IMAGE VIEWER WIZARD */}
+            {/* SLEEK GALLERY MODAL */}
             <AnimatePresence>
               {viewingImage && (
-                <motion.div 
-                  initial={{ opacity: 0 }} 
-                  animate={{ opacity: 1 }} 
-                  exit={{ opacity: 0 }}
-                  className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-20 bg-black/95 backdrop-blur-xl"
-                  onClick={() => setViewingImage(null)}
-                >
-                  <button className="absolute top-10 right-10 h-14 w-14 flex items-center justify-center rounded-2xl bg-white/10 text-white hover:bg-white/20 transition-all shadow-2xl z-[210]">
-                    <X size={32} />
-                  </button>
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
                   <motion.div 
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.9, opacity: 0 }}
-                    className="relative max-w-full max-h-full flex items-center justify-center"
+                    initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+                    animate={{ opacity: 1, scale: 1, y: 0 }} 
+                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    className="relative w-full max-w-4xl bg-[color:var(--card)] rounded-[2.5rem] border border-primary/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <img 
-                      src={viewingImage} 
-                      alt="Attachment" 
-                      className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-[0_0_100px_rgba(0,0,0,0.5)] border border-white/5"
-                    />
-                    <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-white/60 text-[10px] font-black uppercase tracking-[0.3em]">Operational Visual Proof</div>
+                    {/* Modal Header */}
+                    <div className="flex items-center justify-between px-8 py-5 border-b border-[color:var(--border)] bg-[color:var(--muted)]/20">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                          <ImageIcon size={18} />
+                        </div>
+                        <span className="text-xs font-black uppercase tracking-[0.2em] text-primary">Visual Attachment</span>
+                      </div>
+                      <button 
+                        onClick={() => setViewingImage(null)}
+                        className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-destructive/10 hover:text-destructive transition-all text-[color:var(--muted-foreground)]"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    {/* Image Canvas */}
+                    <div className="p-4 bg-black/5 flex items-center justify-center min-h-[300px] max-h-[70vh]">
+                      <img 
+                        src={viewingImage} 
+                        alt="Attachment" 
+                        className="max-w-full max-h-full object-contain rounded-xl shadow-lg border border-[color:var(--border)]"
+                      />
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="px-8 py-4 border-t border-[color:var(--border)] bg-[color:var(--muted)]/10 flex items-center justify-center">
+                      <div className="px-4 py-1.5 rounded-full bg-primary/5 border border-primary/10 text-[9px] font-black uppercase tracking-[0.3em] text-primary/60">
+                        Operational Visual Proof
+                      </div>
+                    </div>
                   </motion.div>
-                </motion.div>
+                  {/* Click outside to close */}
+                  <div className="absolute inset-0 -z-10" onClick={() => setViewingImage(null)} />
+                </div>
               )}
             </AnimatePresence>
 

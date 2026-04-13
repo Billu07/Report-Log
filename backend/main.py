@@ -56,6 +56,7 @@ class DailyReportRecord(BaseModel):
     id: Optional[str] = None
     report_date: date
     author_name: str
+    author_email: Optional[str] = None
     raw_text: str
     formatted_report: str
     image_url: Optional[str] = None
@@ -289,6 +290,7 @@ async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(ge
     payload = {
         "report_date": (request.report_date or date.today()).isoformat(),
         "author_name": author_name,
+        "author_email": user.email,
         "raw_text": json.dumps(updates_dicts),
         "formatted_report": formatted,
         "image_url": next((u["image_url"] for u in updates_dicts if u["image_url"]), None)
