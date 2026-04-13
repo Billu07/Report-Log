@@ -814,7 +814,7 @@ export default function Dashboard() {
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => setPostImage(e.target.files?.[0] ?? null)} />
                         </label>
                         <button type="submit" disabled={isPosting || (!postContent.trim() && !postImage)} className="button-primary h-10 px-6 rounded-xl font-bold tracking-tight">
-                          {isPosting ? <LoadingSpinner className="h-4 w-4 border-t-white border-white/20" /> : "Post Briefing"}
+                          {isPosting ? <LoadingSpinner className="h-4 w-4" /> : "Post Briefing"}
                         </button>
                       </div>
                     </form>
