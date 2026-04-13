@@ -1038,7 +1038,7 @@ export default function Dashboard() {
             {/* FEED VIEW */}
             {!isLoading && activeTab === "feed" && !isComposing && !selectedReport && (
               <motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-3xl flex-col gap-8">
-                <div className="card-elevated rounded-[2rem] border-primary/10 bg-[color:var(--card)]/95 p-7 shadow-xl shadow-black/5 backdrop-blur-xl">
+                <div className="card-elevated rounded-[2rem] border-primary/10 bg-[color:var(--card)]/95 p-7 shadow-xl shadow-black/5 backdrop-blur-xl dark:border-[#2f4a72] dark:bg-[#0f1f36]/92 dark:shadow-black/45">
                   <div className="flex gap-5">
                     <img src={userAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
                     <form onSubmit={handlePostSubmit} className="flex-1 flex flex-col gap-5">
@@ -1054,7 +1054,7 @@ export default function Dashboard() {
                           className="min-h-[88px] w-full resize-none bg-transparent text-base font-medium leading-relaxed text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)]"
                         />
                         {mentionSearch === "post" && (
-                          <div className="absolute top-full left-0 z-50 mt-2 w-64 bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-2xl shadow-2xl overflow-hidden p-2 flex flex-col gap-1">
+                          <div className="absolute top-full left-0 z-50 mt-2 flex w-64 flex-col gap-1 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 p-2 shadow-2xl backdrop-blur-2xl dark:border-[#3a5885] dark:bg-[#0e2039]/95">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] p-2">Select Teammate</p>
                             {profiles.map(p => (
                               <button key={p.id} type="button" onClick={() => insertMention(null, p.full_name)} className="flex items-center gap-3 p-2 hover:bg-primary/5 hover:text-primary rounded-xl transition-colors text-sm font-semibold">
@@ -1096,7 +1096,7 @@ export default function Dashboard() {
                       const isMyPost = post.author_email === session.user.email;
                       
                       return (
-                        <div key={post.id} className="group/card card-elevated relative flex flex-col overflow-hidden rounded-[2rem] border-[color:var(--border)]/80 bg-[color:var(--card)]/95 shadow-xl shadow-black/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25">
+                        <div key={post.id} className="group/card card-elevated relative flex flex-col overflow-hidden rounded-[2rem] border-[color:var(--border)]/80 bg-[color:var(--card)]/95 shadow-xl shadow-black/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 dark:border-[#334f78] dark:bg-[#0d1e34]/92 dark:shadow-black/45">
                           {/* Post Header */}
                           <div className="flex items-center justify-between px-6 pb-4 pt-6">
                             <div className="flex items-center gap-4">
@@ -1133,7 +1133,7 @@ export default function Dashboard() {
                               
                               <div className="absolute right-0 top-full w-48 opacity-0 pointer-events-none group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto transition-all translate-y-2 group-hover/menu:translate-y-0 z-50 pt-2">
                                 <div className="absolute top-0 left-0 right-0 h-2" /> {/* Invisible Bridge */}
-                                <div className="bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-2xl shadow-2xl py-2">
+                                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 py-2 shadow-2xl backdrop-blur-2xl dark:border-[#3a5885] dark:bg-[#10243f]/95">
                                   {isMyPost && (
                                     <button onClick={() => handleDeletePost(post.id)} disabled={deletingPostId === post.id} className="flex w-full items-center gap-3 px-4 py-2 text-sm font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60">
                                       {deletingPostId === post.id ? <LoadingSpinner className="h-4 w-4" tone="danger" /> : <Trash2 size={16} />} Delete Post
@@ -1168,7 +1168,7 @@ export default function Dashboard() {
                           )}
                           
                           {/* Post Actions */}
-                          <div className="flex items-center justify-between border-t border-[color:var(--border)] bg-[color:var(--muted)]/45 px-6 py-3.5">
+                          <div className="flex items-center justify-between border-t border-[color:var(--border)] bg-[color:var(--muted)]/45 px-6 py-3.5 dark:border-[#2d466b] dark:bg-[#10243f]">
                             <div className="flex flex-wrap gap-1.5">
                               {EMOJI_OPTIONS.map(({ char }) => {
                                 const count = post.reactions.filter(r => r.emoji === char).length;
@@ -1188,7 +1188,7 @@ export default function Dashboard() {
                               <div className="relative group/react">
                                 <button className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white"><SmilePlus size={18} /></button>
                                 <div className="absolute bottom-full left-0 opacity-0 pointer-events-none group-hover/react:opacity-100 group-hover/react:pointer-events-auto transition-all translate-y-2 group-hover/react:translate-y-0 z-50 pb-3">
-                                  <div className="bg-[color:var(--card)]/90 backdrop-blur-2xl border border-[color:var(--border)] rounded-full shadow-2xl flex gap-1 p-2">
+                                  <div className="flex gap-1 rounded-full border border-[color:var(--border)] bg-[color:var(--card)]/90 p-2 shadow-2xl backdrop-blur-2xl dark:border-[#3a5885] dark:bg-[#10243f]/95">
                                     {EMOJI_OPTIONS.map(({ char }) => (
                                       <button key={char} onClick={() => handleReaction(post.id, char, "post")} className="h-10 w-10 flex items-center justify-center text-xl rounded-full hover:bg-primary/10 transition-colors">{char}</button>
                                     ))}
@@ -1204,7 +1204,7 @@ export default function Dashboard() {
                           </div>
                           
                           {/* Comments Section */}
-                          <div className="flex flex-col gap-5 bg-[color:var(--card)] px-6 pb-6 pt-5">
+                          <div className="flex flex-col gap-5 bg-[color:var(--card)] px-6 pb-6 pt-5 dark:bg-[#0e1f36]">
                             {post.comments.length > 0 && (
                               <div className="flex flex-col gap-5">
                                 {post.comments.map(comment => {
@@ -1221,7 +1221,7 @@ export default function Dashboard() {
                                           </div>
                                           {isMyComment && <button onClick={() => handleDeleteComment(post.id, comment.id)} disabled={deletingCommentId === comment.id} className="flex h-6 w-6 items-center justify-center rounded-lg text-destructive opacity-0 transition-all hover:bg-destructive/10 group-hover/comment:opacity-100 disabled:cursor-not-allowed disabled:opacity-60">{deletingCommentId === comment.id ? <LoadingSpinner className="h-3 w-3" tone="danger" /> : <Trash2 size={12}/>}</button>}
                                         </div>
-                                        <div className="rounded-2xl rounded-tl-none border border-[color:var(--border)] bg-[color:var(--muted)]/40 px-4 py-2.5 text-sm font-medium text-[color:var(--foreground)] opacity-90 shadow-sm">
+                                        <div className="rounded-2xl rounded-tl-none border border-[color:var(--border)] bg-[color:var(--muted)]/40 px-4 py-2.5 text-sm font-medium text-[color:var(--foreground)] opacity-90 shadow-sm dark:border-[#38557f] dark:bg-[#142944]">
                                           {comment.content.split(/(@[\w\s]+)/g).map((part, i) => part.startsWith("@") ? <span key={i} className="text-primary font-bold">{part}</span> : part)}
                                         </div>
                                         <div className="flex items-center gap-3 ml-2 mt-1">
@@ -1249,14 +1249,14 @@ export default function Dashboard() {
                               <img src={userAvatar} className="h-9 w-9 shrink-0 rounded-xl border border-[color:var(--border)] object-cover ring-2 ring-primary/5" alt="" />
                               <div className="flex-1 relative">
                                 <form onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem('comment') as HTMLInputElement; handleCommentSubmit(post.id, input.value); input.value = ''; }} className="relative flex items-center">
-                                  <input id={`comment-input-${post.id}`} name="comment" type="text" disabled={commentingPostId === post.id} placeholder="Add a comment... type @ to mention" className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 pr-12 text-sm font-semibold outline-none ring-primary/5 transition-all focus:border-primary/30 focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60" onChange={(e) => {
+                                  <input id={`comment-input-${post.id}`} name="comment" type="text" disabled={commentingPostId === post.id} placeholder="Add a comment... type @ to mention" className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 pr-12 text-sm font-semibold outline-none ring-primary/5 transition-all focus:border-primary/30 focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#3b5a85] dark:bg-[#10233d]" onChange={(e) => {
                                     if(e.target.value.endsWith("@")) setMentionSearch(post.id);
                                     else if (!e.target.value.includes("@")) setMentionSearch(null);
                                   }} />
                                   <button type="submit" disabled={commentingPostId === post.id} className="absolute right-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-60">{commentingPostId === post.id ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Send size={15} />}</button>
                                 </form>
                                 {mentionSearch === post.id && (
-                                  <div className="absolute bottom-full left-0 z-50 mb-2 w-64 bg-[color:var(--card)] border border-[color:var(--border)] rounded-2xl shadow-2xl overflow-hidden p-2 flex flex-col gap-1">
+                                  <div className="absolute bottom-full left-0 z-50 mb-2 flex w-64 flex-col gap-1 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-2 shadow-2xl dark:border-[#3a5885] dark:bg-[#0f213a]">
                                     <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] p-2 border-b border-[color:var(--border)] mb-1">Mention Member</p>
                                     {profiles.map(p => (
                                       <button key={p.id} type="button" onClick={() => insertMention(post.id, p.full_name)} className="flex items-center gap-3 p-2 hover:bg-primary/5 hover:text-primary rounded-xl transition-colors text-sm font-semibold">
@@ -1279,8 +1279,8 @@ export default function Dashboard() {
 
             {/* PROFILE VIEW */}
             {!isLoading && activeTab === "profile" && profile && (
-              <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-12 max-w-4xl mx-auto">
-                <div className="card-elevated overflow-hidden relative rounded-[3rem] border-primary/5 shadow-2xl">
+              <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-4xl flex-col gap-12">
+                <div className="card-elevated relative overflow-hidden rounded-[3rem] border-primary/5 shadow-2xl dark:border-[#2f4a72] dark:bg-[#0d1f36]/92">
                   <div className="aspect-[3.5/1] w-full bg-[color:var(--muted)] relative group overflow-hidden border-b border-[color:var(--border)]">
                     {profile.cover_url ? (
                       <img src={profile.cover_url} className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105" alt="Cover" />
@@ -1298,11 +1298,11 @@ export default function Dashboard() {
                         </div>
                         <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-[2.5rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-all border-4 border-transparent group-hover:border-primary/20"><Camera size={28} /> <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "avatar"); }} /></label>
                       </div>
-                      <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <div className="flex items-center gap-2.5 px-4 py-2 bg-primary/5 rounded-xl border border-primary/10 text-primary text-xs font-bold uppercase tracking-widest"><LoadingSpinner className="h-3 w-3" /> Syncing</div>}</div>
+                      <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <div className="flex items-center gap-2.5 rounded-xl border border-primary/10 bg-primary/5 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary dark:border-primary/30 dark:bg-primary/15"><LoadingSpinner className="h-3 w-3" /> Syncing</div>}</div>
                     </div>
                     <form onSubmit={(e) => handleProfileUpdate(e, (e.currentTarget.elements.namedItem('bio') as HTMLTextAreaElement).value, (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value)} className="mt-8 flex flex-col gap-8">
                       <div><input name="name" defaultValue={profile.full_name} className="font-heading w-full bg-transparent text-3xl font-extrabold tracking-tight text-[color:var(--foreground)] outline-none transition-all focus:border-primary/30 border-b-2 border-transparent sm:text-4xl lg:text-5xl" /> <div className="mt-2 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-primary opacity-80">{session.user.email}</div></div>
-                      <div><label className="text-[10px] font-bold uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] mb-3 block opacity-60">Bio / Role</label><textarea name="bio" defaultValue={profile.bio || ""} placeholder="Describe your role..." className="w-full max-w-3xl resize-none bg-[color:var(--input)] border border-[color:var(--border)] rounded-[1.5rem] p-5 text-lg font-medium focus:border-primary/30 focus:ring-4 ring-primary/5 outline-none min-h-[120px] transition-all leading-relaxed shadow-inner" /></div>
+                      <div><label className="mb-3 block text-[10px] font-bold uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] opacity-60">Bio / Role</label><textarea name="bio" defaultValue={profile.bio || ""} placeholder="Describe your role..." className="min-h-[120px] w-full max-w-3xl resize-none rounded-[1.5rem] border border-[color:var(--border)] bg-[color:var(--input)] p-5 text-lg font-medium leading-relaxed outline-none ring-primary/5 transition-all focus:border-primary/30 focus:ring-4 shadow-inner dark:border-[#3a5885] dark:bg-[#12263f]/85" /></div>
                       <div className="flex justify-end pt-4"><button type="submit" disabled={isUpdatingProfile} className="button-primary h-12 px-8 rounded-2xl font-bold text-base shadow-xl shadow-primary/20">Save Profile</button></div>
                     </form>
                   </div>
@@ -1311,7 +1311,7 @@ export default function Dashboard() {
                   <h3 className="font-heading text-2xl font-bold mb-8 tracking-tight flex items-center gap-3"><Activity size={24} className="text-primary"/> Recent Briefings</h3>
                   <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
                     {myReports.length === 0 ? <div className="col-span-full py-20 border border-dashed border-[color:var(--border)] rounded-[2rem] text-center text-[color:var(--muted-foreground)] font-medium">No reports recorded yet.</div> : myReports.slice(0,6).map(report => (
-                       <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated group flex cursor-pointer flex-col p-8 text-left hover:border-primary/30 rounded-[2rem] bg-gradient-to-br from-[color:var(--card)] to-transparent">
+                       <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated group flex cursor-pointer flex-col rounded-[2rem] bg-gradient-to-br from-[color:var(--card)] to-transparent p-8 text-left hover:border-primary/30 dark:border-[#334f78] dark:bg-gradient-to-br dark:from-[#10233d] dark:to-transparent">
                         <div className="mb-4 flex justify-between items-center"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-lg bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
                         <h3 className="line-clamp-2 font-heading text-xl font-bold tracking-tight mb-2">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
                         <p className="line-clamp-2 text-sm font-medium text-[color:var(--muted-foreground)] opacity-70">Review the details for this report.</p>
@@ -1366,7 +1366,7 @@ export default function Dashboard() {
                       const reportAvatar = authorProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(report.author_name)}&background=random&size=32&bold=true`;
                       
                       return (
-                        <div key={report.id} className="card-elevated flex flex-col p-8 hover:shadow-2xl hover:border-primary/20 rounded-[2rem] transition-all duration-500 bg-gradient-to-br from-[color:var(--card)] to-transparent group">
+                        <div key={report.id} className="card-elevated group flex flex-col rounded-[2rem] bg-gradient-to-br from-[color:var(--card)] to-transparent p-8 transition-all duration-500 hover:border-primary/20 hover:shadow-2xl dark:border-[#334f78] dark:bg-gradient-to-br dark:from-[#10233d] dark:to-transparent">
                           <div className="mb-5 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1.5 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-xl bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
                           <button onClick={() => setSelectedReport(report)} className="text-left">
                             <h3 className="mb-4 line-clamp-2 font-heading text-xl font-bold tracking-tight leading-tight group-hover:text-primary transition-colors">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
@@ -1391,15 +1391,15 @@ export default function Dashboard() {
                     })}
                   </div>
                 ) : (
-                  <div className="card-elevated rounded-[2.4rem] border-primary/10 bg-[color:var(--card)] p-8 shadow-2xl">
+                  <div className="card-elevated rounded-[2.4rem] border-primary/10 bg-[color:var(--card)] p-8 shadow-2xl dark:border-[#2b4268] dark:bg-[#0c182b]/95">
                      <div className="mb-8 flex items-center justify-between">
                        <h2 className="font-heading text-3xl font-extrabold tracking-tight">{format(visibleMonth, "MMMM yyyy")}</h2> 
                        <div className="flex gap-2.5">
-                         <button onClick={() => handleMonthChange("previous")} className="flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white"><ChevronLeft size={20} /></button> 
-                         <button onClick={() => handleMonthChange("next")} className="flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white"><ChevronRight size={20} /></button>
+                         <button onClick={() => handleMonthChange("previous")} className="flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white dark:border-[#375683] dark:bg-[#142745] dark:text-[#b6d2ff] dark:hover:bg-primary dark:hover:text-white"><ChevronLeft size={20} /></button> 
+                         <button onClick={() => handleMonthChange("next")} className="flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/5 text-primary transition-all hover:bg-primary hover:text-white dark:border-[#375683] dark:bg-[#142745] dark:text-[#b6d2ff] dark:hover:bg-primary dark:hover:text-white"><ChevronRight size={20} /></button>
                        </div>
                      </div>
-                     <div className="mb-3 grid grid-cols-7 gap-3 text-center text-[10px] font-black uppercase tracking-[0.22em] text-primary/60">
+                     <div className="mb-3 grid grid-cols-7 gap-3 text-center text-[10px] font-black uppercase tracking-[0.22em] text-primary/60 dark:text-[#8fb8ff]">
                        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => <div key={dayName} className="py-1">{dayName}</div>)}
                      </div>
                     <div className="grid grid-cols-7 gap-3">
@@ -1408,16 +1408,16 @@ export default function Dashboard() {
                         const current = isSameMonth(day, visibleMonth);
                         const isToday = isSameDay(day, new Date());
                         return (
-                           <div key={day.toISOString()} className={`flex min-h-[128px] flex-col rounded-[1.25rem] border p-3 transition-all duration-300 ${!current ? "border-transparent opacity-20" : isToday ? "border-primary/30 bg-primary/10 shadow-sm shadow-primary/10" : "border-[color:var(--border)] bg-[color:var(--muted)]/35"} ${dayReports.length > 0 ? "hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary/5" : ""}`}>
+                           <div key={day.toISOString()} className={`flex min-h-[128px] flex-col rounded-[1.25rem] border p-3 transition-all duration-300 ${!current ? "border-transparent opacity-20 dark:opacity-30" : isToday ? "border-primary/30 bg-primary/10 shadow-sm shadow-primary/10 dark:border-primary/55 dark:bg-primary/15 dark:shadow-primary/20" : "border-[color:var(--border)] bg-[color:var(--muted)]/35 dark:border-[#2f456a] dark:bg-[#10233d]/80"} ${dayReports.length > 0 ? "hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary/5 dark:hover:border-primary/50 dark:hover:bg-primary/10" : ""}`}>
                              <div className="mb-2 flex items-center justify-between">
-                               <span className={`text-sm font-black tracking-tight ${dayReports.length > 0 ? "text-primary" : "text-[color:var(--muted-foreground)] opacity-50"} ${isToday ? "scale-110 origin-left" : ""}`}>{format(day, "d")}</span>
+                               <span className={`text-sm font-black tracking-tight ${dayReports.length > 0 ? "text-primary dark:text-[#b8d5ff]" : "text-[color:var(--muted-foreground)] opacity-50 dark:opacity-80"} ${isToday ? "scale-110 origin-left" : ""}`}>{format(day, "d")}</span>
                                {dayReports.length > 0 && (
-                                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">{dayReports.length}</span>
+                                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary dark:bg-primary/20 dark:text-[#d7e8ff]">{dayReports.length}</span>
                                )}
                              </div>
                              <div className="mt-1 flex flex-col gap-1.5">
                                {dayReports.map((r, idx) => (
-                                 <button key={idx} onClick={() => setSelectedReport(r)} className="w-full truncate rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[color:var(--foreground)] transition-all hover:border-primary/30 hover:text-primary">{selectedAuthor ? r.formatted_report.substring(0, 14) : r.author_name}</button>
+                                 <button key={idx} onClick={() => setSelectedReport(r)} className="w-full truncate rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[color:var(--foreground)] transition-all hover:border-primary/30 hover:text-primary dark:border-[#3a5784] dark:bg-[#122845] dark:text-[#d9e8ff] dark:hover:border-primary/50 dark:hover:text-[#eaf2ff]">{selectedAuthor ? r.formatted_report.substring(0, 14) : r.author_name}</button>
                                ))}
                              </div>
                            </div>
@@ -1499,7 +1499,7 @@ export default function Dashboard() {
 
                             <div className="flex flex-col gap-1.5">
                               <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Attachment (Optional)</label>
-                              <label className="flex items-center justify-between px-3 h-10 rounded-lg border border-dashed border-[color:var(--border)] bg-white/5 hover:bg-white/10 cursor-pointer transition-all">
+                              <label className="flex h-10 cursor-pointer items-center justify-between rounded-lg border border-dashed border-[color:var(--border)] bg-[color:var(--muted)]/30 px-3 transition-all hover:bg-[color:var(--muted)]/50 dark:border-[#3b5986] dark:bg-[#142842] dark:hover:bg-[#1a3151]">
                                 <span className="text-xs text-[color:var(--muted-foreground)] truncate">{update.selectedImage ? update.selectedImage.name : "Choose file..."}</span>
                                 <ImageIcon size={14} className="text-[color:var(--muted-foreground)]" />
                                 <input type="file" accept="image/*" onChange={(e) => { const newU = [...updates]; newU[idx].selectedImage = e.target.files?.[0] ?? null; setUpdates(newU); }} className="hidden" />
@@ -1536,7 +1536,7 @@ export default function Dashboard() {
               
               return (
                 <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex max-w-4xl flex-col gap-10 pb-6">
-                  <div className="card-elevated rounded-[2.25rem] border-primary/5 bg-gradient-to-br from-[color:var(--card)] to-transparent p-6 shadow-2xl sm:p-10 md:rounded-[3.5rem] md:p-16">
+                  <div className="card-elevated rounded-[2.25rem] border-primary/5 bg-gradient-to-br from-[color:var(--card)] to-transparent p-6 shadow-2xl dark:border-[#2f4a72] dark:bg-gradient-to-br dark:from-[#0f223d] dark:to-transparent sm:p-10 md:rounded-[3.5rem] md:p-16">
                     <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
                       <div>
                         <div className="flex items-center gap-3 mb-6">
@@ -1566,7 +1566,7 @@ export default function Dashboard() {
                       <div className="flex h-16 w-16 items-center justify-center group-hover:scale-110 transition-transform duration-500 p-2"><img src="/logo.png" alt="Logo" className="h-full w-full object-contain" /></div>
                     </div>
                     <div className="mb-16"><CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} /></div>
-                    <div className="rounded-[2.5rem] border-2 border-primary/5 bg-primary/5 p-10 shadow-inner">
+                    <div className="rounded-[2.5rem] border-2 border-primary/5 bg-primary/5 p-10 shadow-inner dark:border-primary/25 dark:bg-[#10263f]">
                       <h4 className="mb-8 flex items-center gap-3 font-heading text-sm font-black uppercase tracking-[0.3em] text-primary/60"><FileText size={18} /> Raw Work Notes</h4>
                       <div className="space-y-10">{(() => { try { const parsed = JSON.parse(selectedReport.raw_text); return parsed.map((p: any, i: number) => ( <div key={i} className="flex flex-col gap-3 relative pl-6 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary/10 before:rounded-full"><span className="text-xs font-black uppercase tracking-[0.2em] text-primary">{p.project_name}</span> <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed">{p.work_notes}</span></div> )); } catch { return <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed italic">"{selectedReport.raw_text}"</span>; } })()}</div>
                     </div>
@@ -1583,7 +1583,7 @@ export default function Dashboard() {
                     initial={{ opacity: 0, scale: 0.98, y: 20 }} 
                     animate={{ opacity: 1, scale: 1, y: 0 }} 
                     exit={{ opacity: 0, scale: 0.98, y: 20 }}
-                    className="relative w-full max-w-4xl bg-[color:var(--card)] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+                    className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-[3rem] border border-white/10 bg-[color:var(--card)] shadow-2xl dark:border-[#3a5885] dark:bg-[#0f223d]"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <header className="absolute top-6 right-8 z-50">
@@ -1619,7 +1619,7 @@ export default function Dashboard() {
                           </div>
 
                           {viewingProfile.bio && (
-                            <div className="bg-black/5 rounded-[1.5rem] p-6 border border-[color:var(--border)] max-w-3xl">
+                            <div className="max-w-3xl rounded-[1.5rem] border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#39567f] dark:bg-[#122740]">
                               <label className="text-[10px] font-bold uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] mb-3 block opacity-60">Teammate Bio</label>
                               <p className="text-lg font-medium leading-relaxed opacity-90 italic">"{viewingProfile.bio}"</p>
                             </div>
@@ -1634,7 +1634,7 @@ export default function Dashboard() {
                                 <div className="py-10 border border-dashed border-[color:var(--border)] rounded-[2rem] text-center text-[color:var(--muted-foreground)] text-sm italic">No transmissions shared yet.</div>
                               ) : (
                                 posts.filter(p => p.author_email === viewingProfile.user_email).slice(0, 5).map(post => (
-                                  <div key={post.id} className="bg-[color:var(--card)] border border-[color:var(--border)] rounded-[2rem] p-6 shadow-sm">
+                                  <div key={post.id} className="rounded-[2rem] border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm dark:border-[#39567f] dark:bg-[#122740]">
                                     <p className="text-sm font-medium leading-relaxed opacity-90 mb-4">{post.content}</p>
                                     <div className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-40">
                                       {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
@@ -1655,11 +1655,11 @@ export default function Dashboard() {
 
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (
-               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl rounded-[2rem] border-primary/5 p-6 sm:p-10 md:rounded-[2.5rem] md:p-12">
+               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl rounded-[2rem] border-primary/5 p-6 dark:border-[#2f4a72] dark:bg-[#0f223d]/92 sm:p-10 md:rounded-[2.5rem] md:p-12">
                 <h3 className="mb-10 font-heading text-3xl font-black tracking-tight text-primary">System Configuration</h3>
                 <div className="space-y-8">
-                  <div className="rounded-2xl border border-[color:var(--border)] p-6 bg-black/5"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">User Identity</h4> <div className="flex items-center gap-4"><img src={userAvatar} className="h-12 w-12 rounded-2xl border border-primary/10 object-cover" alt="" /> <div><div className="font-bold text-lg">{profile?.full_name}</div> <div className="text-xs font-medium text-[color:var(--muted-foreground)]">{session.user.email}</div></div></div></div>
-                  <div className="rounded-2xl border border-[color:var(--border)] p-6 bg-black/5"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">API Link</h4> <p className="font-mono text-xs text-[color:var(--muted-foreground)] tracking-tight overflow-x-auto whitespace-nowrap">{API_BASE_URL}</p></div>
+                  <div className="rounded-2xl border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#38547c] dark:bg-[#132843]"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">User Identity</h4> <div className="flex items-center gap-4"><img src={userAvatar} className="h-12 w-12 rounded-2xl border border-primary/10 object-cover" alt="" /> <div><div className="font-bold text-lg">{profile?.full_name}</div> <div className="text-xs font-medium text-[color:var(--muted-foreground)]">{session.user.email}</div></div></div></div>
+                  <div className="rounded-2xl border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#38547c] dark:bg-[#132843]"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">API Link</h4> <p className="font-mono text-xs text-[color:var(--muted-foreground)] tracking-tight overflow-x-auto whitespace-nowrap">{API_BASE_URL}</p></div>
                   <div className="pt-4"><button onClick={() => supabase.auth.signOut()} className="flex items-center gap-3 px-6 h-12 rounded-xl bg-destructive/5 text-destructive font-black uppercase tracking-[0.2em] text-[10px] border border-destructive/10 hover:bg-destructive hover:text-white transition-all w-fit">Sign Out</button></div>
                 </div>
               </motion.div>
