@@ -3,6 +3,7 @@
 
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, formatDistanceToNow } from "date-fns";
 import { useEffect, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient, Session } from "@supabase/supabase-js";
@@ -101,6 +102,12 @@ type PostRecord = {
   author_avatar?: string;
   comments: CommentRecord[];
   reactions: ReactionRecord[];
+};
+
+type SubmitReportResponse = {
+  message: string;
+  provider: string;
+  report: ReportRecord;
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/backend";
@@ -439,6 +446,7 @@ export default function Dashboard() {
   }
 
   function resetComposer() {
+    setIsSubmitting(false);
     setReportDate(format(new Date(), "yyyy-MM-dd"));
     setUpdates([createEmptyUpdate()]);
     setIsComposing(false);
@@ -556,19 +564,40 @@ export default function Dashboard() {
           image_url: u.uploadedImageUrl 
         }))
       };
-      await fetchWithAuth(`${API_BASE_URL}/submit-report`, {
+      const submitResult = await fetchWithAuth(`${API_BASE_URL}/submit-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }, session.access_token);
-      const data = await fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session.access_token);
-      setReports(data.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
+      }, session.access_token) as SubmitReportResponse;
+
+      const createdReport = submitResult?.report;
+      if (createdReport) {
+        setReports((prev) => {
+          const normalized = {
+            ...createdReport,
+            id: createdReport.id || `temp-${Date.now()}`,
+            author_name: createdReport.author_name || "Unknown"
+          };
+          return [normalized, ...prev.filter((report) => report.id !== normalized.id)];
+        });
+      }
+
       resetComposer();
       notify("success", "Briefing generated and saved.");
+
+      // Keep modal responsiveness high; refresh list in the background.
+      void fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session.access_token)
+        .then((data) => {
+          setReports(data.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
+        })
+        .catch((err) => console.error(err));
     } catch (err) {
       console.error(err);
       notify("error", "Unable to save this briefing.");
-    } finally { setIsSubmitting(false); }
+      setIsSubmitting(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   async function handlePostSubmit(e: FormEvent) {
@@ -806,6 +835,46 @@ export default function Dashboard() {
   const reportsToShow = isCEO ? displayedReports : myReports;
 
   const userAvatar = profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || session.user.email || "U")}&background=random`;
+  const attachmentViewer = mounted && viewingImage
+    ? createPortal(
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/70 p-4 sm:p-6 md:p-10 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.985 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="relative flex h-[min(86vh,920px)] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-[color:var(--border)] bg-[color:var(--card)] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex h-14 items-center justify-between border-b border-[color:var(--border)] px-5 md:px-7">
+              <div className="flex items-center gap-3">
+                <div className="h-2 w-2 rounded-full bg-primary" />
+                <span className="text-[10px] font-black uppercase tracking-[0.24em] text-[color:var(--muted-foreground)]">
+                  Attachment
+                </span>
+              </div>
+              <button
+                onClick={() => setViewingImage(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[color:var(--muted-foreground)] transition-all hover:bg-destructive/10 hover:text-destructive"
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="flex flex-1 items-center justify-center bg-[color:var(--muted)]/40 p-4 md:p-8">
+              <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl border border-[color:var(--border)] bg-black/10">
+                <img
+                  src={viewingImage}
+                  alt="Attachment"
+                  className="max-h-full max-w-full object-contain"
+                />
+              </div>
+            </div>
+          </motion.div>
+          <div className="absolute inset-0 -z-10" onClick={() => setViewingImage(null)} />
+        </div>,
+        document.body
+      )
+    : null;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20">
@@ -1535,48 +1604,6 @@ export default function Dashboard() {
               )}
             </AnimatePresence>
 
-            {/* SLEEK GALLERY MODAL */}
-            <AnimatePresence>
-              {viewingImage && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 md:p-12 bg-black/80 backdrop-blur-md">
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.98 }} 
-                    animate={{ opacity: 1, scale: 1 }} 
-                    exit={{ opacity: 0, scale: 0.98 }}
-                    className="relative w-full max-w-5xl bg-[color:var(--card)] rounded-[2rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {/* Modal Header */}
-                    <div className="flex items-center justify-between px-8 py-4 border-b border-[color:var(--border)] bg-[color:var(--muted)]/10">
-                      <div className="flex items-center gap-3">
-                        <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)]">System Attachment</span>
-                      </div>
-                      <button 
-                        onClick={() => setViewingImage(null)}
-                        className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-destructive/10 hover:text-destructive transition-all text-[color:var(--muted-foreground)]"
-                      >
-                        <X size={18} />
-                      </button>
-                    </div>
-
-                    {/* Image Canvas with Padding */}
-                    <div className="p-8 bg-black/20 flex items-center justify-center min-h-[400px] max-h-[75vh]">
-                      <div className="relative w-full h-full flex items-center justify-center">
-                        <img 
-                          src={viewingImage} 
-                          alt="Attachment" 
-                          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                  {/* Click outside to close */}
-                  <div className="absolute inset-0 -z-10" onClick={() => setViewingImage(null)} />
-                </div>
-              )}
-            </AnimatePresence>
-
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (
                <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl p-12 rounded-[2.5rem] border-primary/5">
@@ -1591,6 +1618,7 @@ export default function Dashboard() {
           </AnimatePresence>
         </div>
       </main>
+      {attachmentViewer}
     </div>
   );
 }
