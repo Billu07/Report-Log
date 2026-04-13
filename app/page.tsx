@@ -324,14 +324,61 @@ type UploadResultItem = {
 };
 
 // --- API FETCHERS ---
-async function fetchWithAuth(url: string, options: RequestInit = {}, token: string) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      "Authorization": `Bearer ${token}`,
-    },
-  });
+let authRecoveryInProgress = false;
+
+async function fetchWithAuth(url: string, options: RequestInit = {}, token?: string) {
+  const execute = (accessToken: string) =>
+    fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+  const fallbackSession = await supabase.auth.getSession();
+  let accessToken = token || fallbackSession.data.session?.access_token || "";
+  if (!accessToken) {
+    if (!authRecoveryInProgress) {
+      authRecoveryInProgress = true;
+      await supabase.auth.signOut();
+      authRecoveryInProgress = false;
+    }
+    throw new Error("Request failed: 401");
+  }
+
+  let response = await execute(accessToken);
+
+  if (response.status === 401) {
+    const errorBody = (await response.text()).toLowerCase();
+    const needsRecovery =
+      errorBody.includes("session") ||
+      errorBody.includes("jwt") ||
+      errorBody.includes("token");
+
+    if (needsRecovery) {
+      try {
+        const refreshed = await supabase.auth.refreshSession();
+        const refreshedToken = refreshed.data.session?.access_token || "";
+        if (refreshedToken) {
+          accessToken = refreshedToken;
+          response = await execute(accessToken);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    if (response.status === 401) {
+      if (!authRecoveryInProgress) {
+        authRecoveryInProgress = true;
+        await supabase.auth.signOut();
+        authRecoveryInProgress = false;
+      }
+      throw new Error("Request failed: 401");
+    }
+  }
+
   if (response.status === 204) return null;
   if (!response.ok) {
     const errorBody = await response.text();
