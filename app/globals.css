@@ -17,49 +17,52 @@
 }
 
 :root {
-  /* Linear Blue Theme - Elite Engineering Aesthetic */
-  --primary: #0070f3;
+  /* Branded calm-blue visual system */
+  --primary: #2a7bff;
   --primary-foreground: #ffffff;
   
-  --radius: 0.75rem;
+  --radius: 0.9rem;
   
-  --background: #fafafa;
-  --foreground: #000000;
+  --background: #f3f8ff;
+  --foreground: #0b1a2f;
   
   --card: #ffffff;
-  --card-foreground: #000000;
+  --card-foreground: #0b1a2f;
   --popover: #ffffff;
-  --popover-foreground: #000000;
+  --popover-foreground: #0b1a2f;
   
-  --secondary: #f5f5f5;
-  --secondary-foreground: #666666;
-  --muted: #f5f5f5;
-  --muted-foreground: #666666;
-  --accent: #0070f3;
+  --secondary: #eaf2fd;
+  --secondary-foreground: #41526e;
+  --muted: #edf4fc;
+  --muted-foreground: #5b6f8f;
+  --accent: #2a7bff;
   --accent-foreground: #ffffff;
-  --destructive: #ff0000;
+  --destructive: #e53957;
   --destructive-foreground: #ffffff;
   
-  --border: #eaeaea;
-  --input: #ffffff;
-  --ring: rgba(0, 112, 243, 0.2);
+  --border: #d5e4f5;
+  --input: #f9fcff;
+  --ring: rgba(42, 123, 255, 0.24);
 }
 
 .dark {
-  --primary: #0070f3;
+  --primary: #4f96ff;
   --primary-foreground: #ffffff;
-  --background: #0b0e14;
-  --foreground: #f5f5f7;
-  --card: #13171f;
-  --card-foreground: #f5f5f7;
-  --muted: #1c212c;
-  --muted-foreground: #8a8f98;
-  --border: #232936;
-  --input: #0b0e14;
+  --background: #060d18;
+  --foreground: #e8efff;
+  --card: #0f1a2b;
+  --card-foreground: #e8efff;
+  --muted: #132238;
+  --muted-foreground: #98aacc;
+  --border: #21334f;
+  --input: #091424;
 }
 
 body {
-  background-color: var(--background);
+  background:
+    radial-gradient(1200px 900px at 10% -10%, rgba(96, 164, 255, 0.18), transparent 55%),
+    radial-gradient(1000px 820px at 95% 5%, rgba(42, 123, 255, 0.14), transparent 52%),
+    var(--background);
   color: var(--foreground);
   font-family: var(--font-proxima);
   -webkit-font-smoothing: antialiased;
@@ -70,8 +73,8 @@ body {
 /* Modern Background Effects */
 .bg-mesh {
   background-image: 
-    radial-gradient(circle at 0% 0%, var(--primary) 0.15, transparent 0.5),
-    radial-gradient(circle at 100% 100%, var(--primary) 0.1, transparent 0.5);
+    radial-gradient(circle at 0% 0%, var(--primary) 0.2, transparent 0.58),
+    radial-gradient(circle at 100% 100%, var(--primary) 0.14, transparent 0.58);
   filter: blur(80px);
 }
 
@@ -104,9 +107,9 @@ body {
   background-image: 
     linear-gradient(to right, var(--border) 1px, transparent 1px),
     linear-gradient(to bottom, var(--border) 1px, transparent 1px);
-  background-size: 40px 40px;
+  background-size: 44px 44px;
   mask-image: radial-gradient(circle at center, black, transparent 80%);
-  opacity: 0.15;
+  opacity: 0.2;
 }
 
 .bg-dots {
@@ -143,28 +146,35 @@ h1, h2, h3, h4, h5, h6 {
 
 @layer components {
   .card-elevated {
-    background-color: var(--card);
+    background:
+      linear-gradient(165deg, rgba(255, 255, 255, 0.95), rgba(250, 253, 255, 0.9));
     color: var(--card-foreground);
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-    transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+    border-radius: calc(var(--radius) + 0.15rem);
+    border: 1px solid color-mix(in oklab, var(--border), #ffffff 22%);
+    transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+      0 18px 42px -24px rgba(18, 46, 93, 0.36),
+      0 2px 10px rgba(64, 111, 180, 0.08);
+    backdrop-filter: blur(10px);
   }
 
   .card-elevated:hover {
-    border-color: var(--primary);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 0 15px oklch(from var(--primary) l c h / 0.1);
-    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--primary), #ffffff 62%);
+    box-shadow:
+      0 26px 44px -24px rgba(18, 46, 93, 0.42),
+      0 0 0 1px rgba(42, 123, 255, 0.09);
+    transform: translateY(-1px);
   }
 
   .button-primary {
     padding: 0.75rem 1.5rem;
-    border-radius: 0.6rem;
-    background: linear-gradient(135deg, var(--primary), oklch(from var(--primary) calc(l - 0.05) c h));
+    border-radius: 0.72rem;
+    background: linear-gradient(130deg, #2a7bff, #1868f5 55%, #0f56d7);
     color: var(--primary-foreground);
-    font-weight: 600;
-    transition: all 300ms ease;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    transition: all 220ms ease;
+    border: 1px solid rgba(255, 255, 255, 0.22);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -173,14 +183,14 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .button-primary:hover {
-    filter: brightness(1.05);
-    box-shadow: 0 0 25px oklch(from var(--primary) l c h / 0.4);
+    filter: brightness(1.03);
+    box-shadow: 0 14px 28px -16px rgba(24, 104, 245, 0.62);
     transform: translateY(-1px);
   }
 
   .button-secondary {
     padding: 0.6rem 1.25rem;
-    border-radius: 0.5rem;
+    border-radius: 0.72rem;
     background-color: var(--muted);
     color: var(--foreground);
     font-weight: 600;
@@ -196,23 +206,23 @@ h1, h2, h3, h4, h5, h6 {
   .input-field {
     width: 100%;
     padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: 0.72rem;
     border: 1px solid var(--border);
     background-color: var(--input);
     color: var(--foreground);
-    transition: all 200ms ease;
+    transition: all 160ms ease;
     font-size: 0.95rem;
   }
 
   .input-field:focus {
     outline: none;
-    border-color: var(--primary);
+    border-color: color-mix(in oklab, var(--primary), #ffffff 55%);
     box-shadow: 0 0 0 3px var(--ring);
   }
 
   .sidebar-nav-item {
     padding: 0.6rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: 0.72rem;
     font-size: 0.9rem;
     font-weight: 600;
     transition: all 200ms ease;
@@ -229,22 +239,26 @@ h1, h2, h3, h4, h5, h6 {
 
   .sidebar-nav-item:hover {
     color: var(--foreground);
-    background-color: var(--muted);
+    background-color: color-mix(in oklab, var(--muted), #ffffff 28%);
   }
 
   .sidebar-nav-item.active {
-    background-color: rgba(0, 112, 243, 0.1);
+    background-color: rgba(42, 123, 255, 0.14);
     color: var(--primary);
+    box-shadow: inset 0 0 0 1px rgba(42, 123, 255, 0.1);
   }
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 5px;
+  width: 8px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 10px;
+  background: color-mix(in oklab, var(--primary), var(--border) 72%);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

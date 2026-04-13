@@ -888,7 +888,7 @@ export default function Dashboard() {
     : null;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20">
+    <div className="flex min-h-screen w-full bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20 lg:h-screen lg:overflow-hidden">
       
       {/* Premium Dynamic Background */}
       <div className="fixed inset-0 z-0 pointer-events-none">
@@ -922,7 +922,7 @@ export default function Dashboard() {
       </div>
 
       {/* SIDEBAR */}
-      <aside className="flex w-72 flex-col border-r border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-sm z-20">
+      <aside className="z-20 hidden w-72 flex-col border-r border-[color:var(--border)] bg-[color:var(--card)]/88 p-6 shadow-2xl backdrop-blur-xl lg:flex">
         <div className="mb-10 px-2 flex items-center gap-4 group">
           <img src="/logo.png" alt="Logo" className="h-10 w-10 object-contain group-hover:scale-110 transition-transform duration-500" />
           <div>
@@ -971,25 +971,63 @@ export default function Dashboard() {
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className="relative z-10 flex-1 overflow-y-auto custom-scrollbar scroll-smooth">
-        <header className="sticky top-0 z-40 flex h-20 items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--background)] px-10 shadow-sm backdrop-blur-xl">
+      <main className="relative z-10 flex-1 overflow-y-auto custom-scrollbar scroll-smooth pb-24 lg:pb-0">
+        <header className="sticky top-0 z-40 flex h-20 items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--background)]/88 px-4 shadow-sm backdrop-blur-xl sm:px-6 lg:px-10">
           <div className="flex items-center gap-4">
             {selectedReport && (
               <button onClick={() => setSelectedReport(null)} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-[color:var(--muted)] transition-colors">
                 <ArrowLeft size={20} />
               </button>
             )}
-            <h2 className="font-heading text-2xl font-bold tracking-tight text-[color:var(--foreground)]">
+            <img src="/logo.png" alt="" className="h-8 w-8 rounded-lg object-contain lg:hidden" />
+            <h2 className="font-heading text-xl font-bold tracking-tight text-[color:var(--foreground)] sm:text-2xl">
               {selectedReport ? "Briefing Details" : isComposing ? "Log Briefing" : activeTab === "reports" && selectedAuthor ? `${selectedAuthor}'s Execution` : activeTab === "dashboard" ? "Team Overview" : activeTab === "feed" ? "Company Feed" : activeTab}
             </h2>
           </div>
           
           {!isComposing && !selectedReport && activeTab !== "profile" && activeTab !== "feed" && activeTab !== "settings" && (
-            <button onClick={() => setIsComposing(true)} className="button-primary h-11 px-6 rounded-xl font-bold tracking-tight shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5"><Plus size={18} /> Create Report</button>
+            <button onClick={() => setIsComposing(true)} className="button-primary h-10 rounded-xl px-3.5 font-bold tracking-tight shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 sm:h-11 sm:px-6"><Plus size={18} /> <span className="hidden sm:inline">Create Report</span></button>
           )}
         </header>
 
-        <div className="container mx-auto max-w-6xl py-10 px-10 relative z-10">
+        <div className="sticky top-20 z-30 border-b border-[color:var(--border)] bg-[color:var(--background)]/80 px-4 py-3 backdrop-blur-xl sm:px-6 lg:hidden">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {isCEO && (
+              <button
+                onClick={() => { setActiveTab("dashboard"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }}
+                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "dashboard" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
+              >
+                Dashboard
+              </button>
+            )}
+            <button
+              onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }}
+              className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "reports" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
+            >
+              Reports
+            </button>
+            <button
+              onClick={() => { setActiveTab("feed"); setSelectedReport(null); setIsComposing(false); }}
+              className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "feed" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
+            >
+              Feed
+            </button>
+            <button
+              onClick={() => { setActiveTab("profile"); setSelectedReport(null); setIsComposing(false); }}
+              className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "profile" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
+            >
+              Profile
+            </button>
+            <button
+              onClick={() => { setActiveTab("settings"); setSelectedReport(null); setIsComposing(false); }}
+              className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "settings" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
+            >
+              Settings
+            </button>
+          </div>
+        </div>
+
+        <div className="container relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
           <AnimatePresence mode="wait">
             {isLoading && (
               <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex h-[60vh] items-center justify-center">
@@ -1252,7 +1290,7 @@ export default function Dashboard() {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
                     <label className="absolute bottom-6 right-8 h-10 px-4 bg-black/60 backdrop-blur-xl border border-white/10 text-white rounded-xl cursor-pointer opacity-0 group-hover:opacity-100 transition-all flex items-center gap-2.5 font-bold text-xs hover:bg-black/80"><Camera size={16} /> Update Cover <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleProfileImageUpload(e.target.files[0], "cover"); }} /></label>
                   </div>
-                  <div className="px-10 md:px-16 pb-12 relative">
+                  <div className="relative px-6 pb-12 sm:px-10 md:px-16">
                     <div className="flex justify-between items-start">
                       <div className="relative -mt-16 md:-mt-20 group inline-block">
                         <div className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative ring-1 ring-primary/5">
@@ -1263,7 +1301,7 @@ export default function Dashboard() {
                       <div className="pt-8 flex items-center gap-4">{isUpdatingProfile && <div className="flex items-center gap-2.5 px-4 py-2 bg-primary/5 rounded-xl border border-primary/10 text-primary text-xs font-bold uppercase tracking-widest"><LoadingSpinner className="h-3 w-3" /> Syncing</div>}</div>
                     </div>
                     <form onSubmit={(e) => handleProfileUpdate(e, (e.currentTarget.elements.namedItem('bio') as HTMLTextAreaElement).value, (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value)} className="mt-8 flex flex-col gap-8">
-                      <div><input name="name" defaultValue={profile.full_name} className="font-heading text-5xl font-extrabold bg-transparent outline-none border-b-2 border-transparent focus:border-primary/30 text-[color:var(--foreground)] w-full transition-all tracking-tight" /> <div className="flex items-center gap-2 mt-2 font-bold text-sm text-primary opacity-80 uppercase tracking-[0.2em]">{session.user.email}</div></div>
+                      <div><input name="name" defaultValue={profile.full_name} className="font-heading w-full bg-transparent text-3xl font-extrabold tracking-tight text-[color:var(--foreground)] outline-none transition-all focus:border-primary/30 border-b-2 border-transparent sm:text-4xl lg:text-5xl" /> <div className="mt-2 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-primary opacity-80">{session.user.email}</div></div>
                       <div><label className="text-[10px] font-bold uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] mb-3 block opacity-60">Bio / Role</label><textarea name="bio" defaultValue={profile.bio || ""} placeholder="Describe your role..." className="w-full max-w-3xl resize-none bg-[color:var(--input)] border border-[color:var(--border)] rounded-[1.5rem] p-5 text-lg font-medium focus:border-primary/30 focus:ring-4 ring-primary/5 outline-none min-h-[120px] transition-all leading-relaxed shadow-inner" /></div>
                       <div className="flex justify-end pt-4"><button type="submit" disabled={isUpdatingProfile} className="button-primary h-12 px-8 rounded-2xl font-bold text-base shadow-xl shadow-primary/20">Save Profile</button></div>
                     </form>
@@ -1498,7 +1536,7 @@ export default function Dashboard() {
               
               return (
                 <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex max-w-4xl flex-col gap-10 pb-6">
-                  <div className="card-elevated p-12 md:p-16 rounded-[3.5rem] border-primary/5 shadow-2xl bg-gradient-to-br from-[color:var(--card)] to-transparent">
+                  <div className="card-elevated rounded-[2.25rem] border-primary/5 bg-gradient-to-br from-[color:var(--card)] to-transparent p-6 shadow-2xl sm:p-10 md:rounded-[3.5rem] md:p-16">
                     <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
                       <div>
                         <div className="flex items-center gap-3 mb-6">
@@ -1522,7 +1560,7 @@ export default function Dashboard() {
                             <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div>
                           </div>
                         </div>
-                        <h1 className="font-heading text-5xl font-black tracking-tighter leading-none mb-4">Daily Briefing</h1>
+                        <h1 className="mb-4 font-heading text-4xl font-black leading-none tracking-tighter sm:text-5xl">Daily Briefing</h1>
                         <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] opacity-60"><Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}</div>
                       </div>
                       <div className="flex h-16 w-16 items-center justify-center group-hover:scale-110 transition-transform duration-500 p-2"><img src="/logo.png" alt="Logo" className="h-full w-full object-contain" /></div>
@@ -1567,7 +1605,7 @@ export default function Dashboard() {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                       </div>
 
-                      <div className="px-10 md:px-16 pb-12 relative">
+                      <div className="relative px-6 pb-12 sm:px-10 md:px-16">
                         <div className="relative -mt-16 md:-mt-20 mb-8">
                           <div className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative">
                             <img src={viewingProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingProfile.full_name)}&background=random&size=128&bold=true`} className="w-full h-full object-cover" alt="" />
@@ -1617,7 +1655,7 @@ export default function Dashboard() {
 
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (
-               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl p-12 rounded-[2.5rem] border-primary/5">
+               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl rounded-[2rem] border-primary/5 p-6 sm:p-10 md:rounded-[2.5rem] md:p-12">
                 <h3 className="mb-10 font-heading text-3xl font-black tracking-tight text-primary">System Configuration</h3>
                 <div className="space-y-8">
                   <div className="rounded-2xl border border-[color:var(--border)] p-6 bg-black/5"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">User Identity</h4> <div className="flex items-center gap-4"><img src={userAvatar} className="h-12 w-12 rounded-2xl border border-primary/10 object-cover" alt="" /> <div><div className="font-bold text-lg">{profile?.full_name}</div> <div className="text-xs font-medium text-[color:var(--muted-foreground)]">{session.user.email}</div></div></div></div>
