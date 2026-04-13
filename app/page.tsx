@@ -451,7 +451,7 @@ function LoadingRail({ label }: { label: string }) {
 function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: string) => void }) {
   const lines = text.split("\n");
   return (
-    <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-[color:var(--foreground)] font-mono">
+    <div className="flex flex-col gap-2 font-mono text-[13px] leading-relaxed text-[#2d2a25] dark:text-[#d6e3fb]">
       {lines.map((line, i) => {
         if (!line.trim()) return null;
 
@@ -461,7 +461,7 @@ function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: s
             <div key={i} className="pt-2">
               <button 
                 onClick={() => onViewImage(imageMatch[1])}
-                className="inline-flex items-center gap-2 border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--foreground)] transition-colors hover:border-primary/30 hover:text-primary"
+                className="inline-flex items-center gap-2 border border-[#ceb994] bg-[#efe5ce] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[#2d2a25] transition-colors hover:border-primary/40 hover:text-primary dark:border-[#3d5f8e] dark:bg-[#173056] dark:text-[#dce8ff] dark:hover:border-[#77a9ff]"
               >
                 <ImageIcon size={12} />
                 Attachment
@@ -478,7 +478,7 @@ function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: s
 
         if (isHeader) {
           return (
-            <h3 key={i} className="mt-2 border-b border-[color:var(--border)] pb-1.5 text-sm font-bold uppercase tracking-[0.08em] text-primary">
+            <h3 key={i} className="mt-2 border-b border-[#ccb998] pb-1.5 text-sm font-bold uppercase tracking-[0.08em] text-[#3e5f96] dark:border-[#3b5a87] dark:text-[#9fc5ff]">
               {content}
             </h3>
           );
@@ -488,18 +488,18 @@ function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: s
           const [label, ...rest] = content.split(":");
           const value = rest.join(":").trim();
           return (
-            <div key={i} className="grid grid-cols-[120px_1fr] gap-2 border-b border-dotted border-[color:var(--border)] py-1">
-              <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-primary">{label.trim()}</span>
+            <div key={i} className="grid grid-cols-[120px_1fr] gap-2 border-b border-dotted border-[#d0c0a4] py-1 dark:border-[#35507a]">
+              <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#3e5f96] dark:text-[#9fc5ff]">{label.trim()}</span>
               <span className="text-[13px]">{value}</span>
             </div>
           );
         }
 
         if (isBullet) {
-          return <p key={i} className="pl-2 text-[13px] text-[color:var(--foreground)]">- {content}</p>;
+          return <p key={i} className="pl-2 text-[13px] text-[#2d2a25] dark:text-[#d6e3fb]">- {content}</p>;
         }
 
-        return <p key={i} className="text-[13px] text-[color:var(--foreground)]">{content}</p>;
+        return <p key={i} className="text-[13px] text-[#2d2a25] dark:text-[#d6e3fb]">{content}</p>;
       })}
     </div>
   );
@@ -3331,8 +3331,8 @@ export default function Dashboard() {
               
               return (
                 <motion.div key="detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative z-0 mx-auto flex w-full max-w-3xl flex-col gap-6 pb-6">
-                  <div className="rounded-2xl border-2 border-[color:var(--border)] bg-[#f4edd4] p-4 shadow-xl dark:bg-[#111a2b] sm:p-6">
-                    <div className="mb-4 border-b-2 border-dotted border-[color:var(--border)] pb-3">
+                  <div className="rounded-2xl border-2 border-[#c8b48f] bg-[#f8f1de] p-4 text-[#2d2922] shadow-[0_20px_45px_-24px_rgba(62,45,14,0.35)] dark:border-[#36527d] dark:bg-[#0f1e34] dark:text-[#d7e4fe] dark:shadow-[0_24px_56px_-30px_rgba(8,20,44,0.72)] sm:p-6">
+                    <div className="mb-4 border-b-2 border-dotted border-[#d4c29f] pb-3 dark:border-[#37567f]">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5">
                           <button
@@ -3362,27 +3362,27 @@ export default function Dashboard() {
                             {selectedReport.author_name}
                           </button>
                         </div>
-                        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--muted-foreground)]">Daily Report</span>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#635941] dark:text-[#a8bfdc]">Daily Report</span>
                       </div>
-                      <div className="mt-2 text-[11px] font-bold uppercase tracking-[0.08em] text-[color:var(--muted-foreground)]">
+                      <div className="mt-2 text-[11px] font-bold uppercase tracking-[0.08em] text-[#635941] dark:text-[#a8bfdc]">
                         {format(parseISO(selectedReport.report_date), "EEE, MMM d, yyyy")}
                       </div>
                     </div>
 
-                    <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--card)]/55 p-3 sm:p-4">
+                    <div className="rounded-md border border-[#d4c29f] bg-[#fffaf0] p-3 dark:border-[#3a5b87] dark:bg-[#132748] sm:p-4">
                       <CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} />
                     </div>
 
                     {structuredUpdates.length > 0 && (
-                      <div className="mt-4 rounded-md border border-dashed border-[color:var(--border)] bg-[color:var(--card)]/45 p-3">
-                        <h4 className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-primary">Submitted Fields</h4>
+                      <div className="mt-4 rounded-md border border-dashed border-[#d4c29f] bg-[#fbf4e3] p-3 dark:border-[#3a5b87] dark:bg-[#11233f]">
+                        <h4 className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#3e5f96] dark:text-[#9fc5ff]">Submitted Fields</h4>
                         <div className="space-y-2 text-[12px] font-mono">
                           {structuredUpdates.map((update, idx) => (
-                            <div key={`${update.project_name}-${idx}`} className="border-b border-dotted border-[color:var(--border)] pb-2 last:border-b-0">
-                              <p className="font-bold uppercase tracking-[0.06em] text-primary">{update.project_name}</p>
+                            <div key={`${update.project_name}-${idx}`} className="border-b border-dotted border-[#d4c29f] pb-2 last:border-b-0 dark:border-[#35507a]">
+                              <p className="font-bold uppercase tracking-[0.06em] text-[#3e5f96] dark:text-[#9fc5ff]">{update.project_name}</p>
                               <p>{update.work_notes}</p>
-                              {update.next_steps && <p className="text-[color:var(--muted-foreground)]">Next: {update.next_steps}</p>}
-                              {update.blockers && <p className="text-[color:var(--muted-foreground)]">Blockers: {update.blockers}</p>}
+                              {update.next_steps && <p className="text-[#5f5542] dark:text-[#a8bfdc]">Next: {update.next_steps}</p>}
+                              {update.blockers && <p className="text-[#5f5542] dark:text-[#a8bfdc]">Blockers: {update.blockers}</p>}
                             </div>
                           ))}
                         </div>
