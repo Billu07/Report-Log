@@ -144,12 +144,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 # --- APP SETUP ---
 
-app = FastAPI(
-    title="Autolinium API", 
-    version="1.0.0",
-    docs_url="/api/backend/docs",
-    openapi_url="/api/backend/openapi.json"
-)
+app = FastAPI(title="Autolinium API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -158,8 +153,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-router = APIRouter(prefix="/api/backend")
 
 # --- AI HELPERS ---
 
@@ -235,10 +228,10 @@ async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
 
 # --- ROUTES ---
 
-@router.get("/health")
+@app.get("/health")
 async def health(): return {"status": "ok"}
 
-@router.get("/profiles/me", response_model=ProfileRecord)
+@app.get("/profiles/me", response_model=ProfileRecord)
 async def get_my_profile(user: Any = Depends(get_current_user)):
     resp = await run_in_threadpool(supabase.table("profiles").select("*").eq("user_email", user.email).execute)
     if resp.data: return ProfileRecord(**resp.data[0])
@@ -247,25 +240,25 @@ async def get_my_profile(user: Any = Depends(get_current_user)):
     ins = await run_in_threadpool(supabase.table("profiles").insert(profile).execute)
     return ProfileRecord(**ins.data[0])
 
-@router.get("/profiles/all", response_model=list[ProfileRecord])
+@app.get("/profiles/all", response_model=list[ProfileRecord])
 async def get_all_profiles(user: Any = Depends(get_current_user)):
     resp = await run_in_threadpool(supabase.table("profiles").select("*").execute)
     return [ProfileRecord(**p) for p in resp.data or []]
 
-@router.get("/profiles/fetch/{email}", response_model=ProfileRecord)
+@app.get("/profiles/fetch/{email}", response_model=ProfileRecord)
 async def get_profile_by_email(email: str, user: Any = Depends(get_current_user)):
     resp = await run_in_threadpool(supabase.table("profiles").select("*").eq("user_email", email).execute)
     if not resp.data: raise HTTPException(status_code=404, detail="Not found")
     return ProfileRecord(**resp.data[0])
 
-@router.put("/profiles/me", response_model=ProfileRecord)
+@app.put("/profiles/me", response_model=ProfileRecord)
 async def update_profile_me(update: ProfileUpdate, user: Any = Depends(get_current_user)):
     payload = {k: v for k, v in update.model_dump().items() if v is not None}
     payload["updated_at"] = datetime.now(timezone.utc).isoformat()
     resp = await run_in_threadpool(supabase.table("profiles").update(payload).eq("user_email", user.email).execute)
     return ProfileRecord(**resp.data[0])
 
-@router.get("/reports", response_model=list[DailyReportRecord])
+@app.get("/reports", response_model=list[DailyReportRecord])
 async def get_all_reports(user: Any = Depends(get_current_user)):
     query = supabase.table("daily_reports").select("*")
     if user.email.lower() != CEO_EMAIL:
@@ -273,7 +266,7 @@ async def get_all_reports(user: Any = Depends(get_current_user)):
     resp = await run_in_threadpool(query.order("report_date", desc=True).execute)
     return [DailyReportRecord(**r) for r in resp.data or []]
 
-@router.post("/submit-report", response_model=SubmitReportResponse)
+@app.post("/submit-report", response_model=SubmitReportResponse)
 async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(get_current_user)):
     prof_resp = await run_in_threadpool(supabase.table("profiles").select("full_name").eq("user_email", user.email).execute)
     author_name = prof_resp.data[0]["full_name"] if prof_resp.data else user.email
@@ -291,7 +284,7 @@ async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(ge
     resp = await run_in_threadpool(supabase.table("daily_reports").insert(payload).execute)
     return SubmitReportResponse(message="Created", report=DailyReportRecord(**resp.data[0]), provider=provider)
 
-@router.get("/posts", response_model=list[PostRecord])
+@app.get("/posts", response_model=list[PostRecord])
 async def get_posts_feed(user: Any = Depends(get_current_user)):
     posts = (await run_in_threadpool(supabase.table("posts").select("*").order("created_at", desc=True).execute)).data or []
     if not posts: return []
@@ -319,27 +312,27 @@ async def get_posts_feed(user: Any = Depends(get_current_user)):
         res.append(rec)
     return res
 
-@router.post("/posts", response_model=PostRecord)
+@app.post("/posts", response_model=PostRecord)
 async def create_new_post(req: CreatePostRequest, user: Any = Depends(get_current_user)):
     resp = await run_in_threadpool(supabase.table("posts").insert({"author_email": user.email, "content": req.content, "image_url": req.image_url}).execute)
     return PostRecord(**resp.data[0])
 
-@router.delete("/posts/{post_id}")
+@app.delete("/posts/{post_id}")
 async def delete_post_by_id(post_id: str, user: Any = Depends(get_current_user)):
     await run_in_threadpool(supabase.table("posts").delete().eq("id", post_id).eq("author_email", user.email).execute)
     return {"status": "ok"}
 
-@router.post("/posts/{post_id}/comments", response_model=CommentRecord)
+@app.post("/posts/{post_id}/comments", response_model=CommentRecord)
 async def create_new_comment(post_id: str, req: CreateCommentRequest, user: Any = Depends(get_current_user)):
     resp = await run_in_threadpool(supabase.table("comments").insert({"post_id": post_id, "author_email": user.email, "content": req.content}).execute)
     return CommentRecord(**resp.data[0])
 
-@router.delete("/comments/{comment_id}")
+@app.delete("/comments/{comment_id}")
 async def delete_comment_by_id(comment_id: str, user: Any = Depends(get_current_user)):
     await run_in_threadpool(supabase.table("comments").delete().eq("id", comment_id).eq("author_email", user.email).execute)
     return {"status": "ok"}
 
-@router.post("/posts/{post_id}/reactions", response_model=ReactionRecord)
+@app.post("/posts/{post_id}/reactions", response_model=ReactionRecord)
 async def post_reaction(post_id: str, req: CreateReactionRequest, user: Any = Depends(get_current_user)):
     existing = await run_in_threadpool(supabase.table("reactions").select("*").eq("post_id", post_id).eq("author_email", user.email).eq("emoji", req.emoji).execute)
     if existing.data:
@@ -348,7 +341,7 @@ async def post_reaction(post_id: str, req: CreateReactionRequest, user: Any = De
     resp = await run_in_threadpool(supabase.table("reactions").insert({"post_id": post_id, "author_email": user.email, "emoji": req.emoji}).execute)
     return ReactionRecord(**resp.data[0])
 
-@router.post("/comments/{comment_id}/reactions", response_model=ReactionRecord)
+@app.post("/comments/{comment_id}/reactions", response_model=ReactionRecord)
 async def comment_reaction(comment_id: str, req: CreateReactionRequest, user: Any = Depends(get_current_user)):
     existing = await run_in_threadpool(supabase.table("reactions").select("*").eq("comment_id", comment_id).eq("author_email", user.email).eq("emoji", req.emoji).execute)
     if existing.data:
@@ -356,5 +349,3 @@ async def comment_reaction(comment_id: str, req: CreateReactionRequest, user: An
         return ReactionRecord(**existing.data[0])
     resp = await run_in_threadpool(supabase.table("reactions").insert({"comment_id": comment_id, "author_email": user.email, "emoji": req.emoji}).execute)
     return ReactionRecord(**resp.data[0])
-
-app.include_router(router)
