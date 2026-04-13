@@ -239,11 +239,27 @@ async def health(): return {"status": "ok"}
 
 @app.get("/api/backend/profiles/me", response_model=ProfileRecord)
 async def get_my_profile(user: Any = Depends(get_current_user)):
-    resp = await run_in_threadpool(supabase.table("profiles").select("*").eq("user_email", user.email).execute)
-    if resp.data: return ProfileRecord(**resp.data[0])
-    # Auto-create
-    profile = {"user_email": user.email, "full_name": user.user_metadata.get("full_name", user.email)}
-    ins = await run_in_threadpool(supabase.table("profiles").insert(profile).execute)
+    if not user.email:
+        raise HTTPException(status_code=401, detail="Email not found in token")
+        
+    # Strictly query by the email in the verified token
+    resp = await run_in_threadpool(supabase.table("profiles").select("*").eq("user_email", user.email.lower()).execute)
+    
+    if resp.data and len(resp.data) > 0:
+        return ProfileRecord(**resp.data[0])
+    
+    # Auto-create profile ONLY for this specific email
+    new_profile = {
+        "user_email": user.email.lower(),
+        "full_name": user.user_metadata.get("full_name") or user.email.split("@")[0],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "avatar_url": None, # Force clean state for new users
+        "cover_url": None,
+        "bio": None
+    }
+    ins = await run_in_threadpool(supabase.table("profiles").insert(new_profile).execute)
+    if not ins.data:
+        raise HTTPException(status_code=500, detail="Failed to create profile")
     return ProfileRecord(**ins.data[0])
 
 @app.get("/api/backend/profiles/all", response_model=list[ProfileRecord])
