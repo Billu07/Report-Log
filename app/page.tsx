@@ -147,33 +147,32 @@ function LoadingSpinner({ className = "h-6 w-6" }: { className?: string }) {
   );
 }
 
-function CleanReport({ text }: { text: string }) {
+function CleanReport({ text, onViewImage }: { text: string, onViewImage: (url: string) => void }) {
   const lines = text.split("\n");
   return (
     <div className="flex flex-col gap-5 text-[color:var(--foreground)] font-sans antialiased">
       {lines.map((line, i) => {
         if (!line.trim()) return null;
         
-        // Image Handling (Retro Folder Link)
+        // Image Handling (Sleek Folder Wizard)
         const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
         if (imageMatch) {
           return (
             <div key={i} className="my-6">
-              <a 
-                href={imageMatch[1]} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-3 px-5 py-3 rounded-2xl border border-[color:var(--border)] bg-primary/5 text-primary hover:bg-primary/10 hover:shadow-lg transition-all group"
+              <button 
+                onClick={() => onViewImage(imageMatch[1])}
+                className="inline-flex items-center gap-3 px-5 py-3 rounded-2xl border border-[color:var(--border)] bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all group shadow-sm hover:shadow-primary/10"
               >
                 <div className="relative">
-                  {/* Retro Folder Icon Shape */}
+                  {/* High-end Retro Folder SVG */}
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="transition-transform group-hover:scale-110">
-                    <path d="M4 6C4 4.89543 4.89543 4 6 4H10L12 6H18C19.1046 6 20 6.89543 20 8V18C20 19.1046 19.1046 20 18 20H6C4.89543 20 4 19.1046 4 18V6Z" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-                    <path d="M4 10H20" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+                    <path d="M2 7C2 5.89543 2.89543 5 4 5H9L11 7H20C21.1046 7 22 7.89543 22 9V18C22 19.1046 21.1046 20 20 20H4C2.89543 20 2 19.1046 2 18V7Z" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+                    <path d="M2 10H22" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+                    <path d="M5 8V6C5 5.44772 5.44772 5 6 5H8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                   </svg>
                 </div>
-                <span className="text-xs font-black uppercase tracking-[0.2em]">Open Attachment</span>
-              </a>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">View Attachment</span>
+              </button>
             </div>
           );
         }
@@ -330,6 +329,7 @@ export default function Dashboard() {
   const [selectedReport, setSelectedReport] = useState<ReportRecord | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
   
   // Compose Report State
   const [reportDate, setReportDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -1195,7 +1195,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex h-16 w-16 items-center justify-center group-hover:scale-110 transition-transform duration-500 p-2"><img src="/logo.png" alt="Logo" className="h-full w-full object-contain" /></div>
                   </div>
-                  <div className="mb-16"><CleanReport text={selectedReport.formatted_report} /></div>
+                  <div className="mb-16"><CleanReport text={selectedReport.formatted_report} onViewImage={setViewingImage} /></div>
                   <div className="rounded-[2.5rem] border-2 border-primary/5 bg-primary/5 p-10 shadow-inner">
                     <h4 className="mb-8 flex items-center gap-3 font-heading text-sm font-black uppercase tracking-[0.3em] text-primary/60"><FileText size={18} /> Raw Work Notes</h4>
                     <div className="space-y-10">{(() => { try { const parsed = JSON.parse(selectedReport.raw_text); return parsed.map((p: any, i: number) => ( <div key={i} className="flex flex-col gap-3 relative pl-6 before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-primary/10 before:rounded-full"><span className="text-xs font-black uppercase tracking-[0.2em] text-primary">{p.project_name}</span> <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed">{p.work_notes}</span></div> )); } catch { return <span className="whitespace-pre-wrap text-base font-medium text-[color:var(--muted-foreground)] leading-relaxed italic">"{selectedReport.raw_text}"</span>; } })()}</div>
@@ -1203,6 +1203,37 @@ export default function Dashboard() {
                 </div>
               </motion.div>
             )}
+
+            {/* IMMERSIVE IMAGE VIEWER WIZARD */}
+            <AnimatePresence>
+              {viewingImage && (
+                <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-20 bg-black/95 backdrop-blur-xl"
+                  onClick={() => setViewingImage(null)}
+                >
+                  <button className="absolute top-10 right-10 h-14 w-14 flex items-center justify-center rounded-2xl bg-white/10 text-white hover:bg-white/20 transition-all shadow-2xl z-[210]">
+                    <X size={32} />
+                  </button>
+                  <motion.div 
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    className="relative max-w-full max-h-full flex items-center justify-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <img 
+                      src={viewingImage} 
+                      alt="Attachment" 
+                      className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-[0_0_100px_rgba(0,0,0,0.5)] border border-white/5"
+                    />
+                    <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-white/60 text-[10px] font-black uppercase tracking-[0.3em]">Operational Visual Proof</div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (
