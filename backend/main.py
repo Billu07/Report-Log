@@ -1,6 +1,7 @@
 import os
 import logging
 import httpx
+import json
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -8,7 +9,7 @@ from uuid import uuid4
 
 import google.generativeai as genai
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, APIRouter
+from fastapi import FastAPI, HTTPException, Depends, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -33,8 +34,16 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+# Validate required envs
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    logger.error("CRITICAL: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing!")
+
 # Initialize global client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+except Exception as e:
+    logger.error("Failed to initialize Supabase client: %s", e)
+    supabase = None
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -127,6 +136,9 @@ class CreateReactionRequest(BaseModel):
 security = HTTPBearer()
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Any:
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Supabase not initialized")
+    
     token = credentials.credentials
     try:
         # Verify with Supabase
@@ -138,9 +150,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                     self.email = d.get("email")
                     self.user_metadata = d.get("user_metadata", {})
             return User(user_resp.user.__dict__)
+        else:
+            raise HTTPException(status_code=401, detail="User not found in Supabase")
     except Exception as e:
         logger.error("Auth error: %s", e)
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
 # --- APP SETUP ---
 
@@ -149,6 +163,12 @@ app = FastAPI(
     version="1.0.0",
     root_path="/api/backend"
 )
+
+# Global error handler to catch 500s and log them
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception: %s", exc, exc_info=True)
+    return HTTPException(status_code=500, detail=str(exc))
 
 app.add_middleware(
     CORSMiddleware,
@@ -276,7 +296,7 @@ async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(ge
     author_name = prof_resp.data[0]["full_name"] if prof_resp.data else user.email
     updates_dicts = [u.model_dump() for u in request.updates]
     formatted, provider = await generate_report(updates_dicts)
-    import json
+    
     payload = {
         "report_date": (request.report_date or date.today()).isoformat(),
         "author_name": author_name,
@@ -290,25 +310,35 @@ async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(ge
 
 @app.get("/posts", response_model=list[PostRecord])
 async def get_posts_feed(user: Any = Depends(get_current_user)):
-    posts = (await run_in_threadpool(supabase.table("posts").select("*").order("created_at", desc=True).execute)).data or []
+    posts_resp = await run_in_threadpool(supabase.table("posts").select("*").order("created_at", desc=True).execute)
+    posts = posts_resp.data or []
     if not posts: return []
+    
     p_ids = [p["id"] for p in posts]
     emails = list(set([p["author_email"] for p in posts]))
-    profiles = {p["user_email"]: p for p in (await run_in_threadpool(supabase.table("profiles").select("*").in_("user_email", emails).execute)).data or []}
-    comments = (await run_in_threadpool(supabase.table("comments").select("*").in_("post_id", p_ids).order("created_at").execute)).data or []
+    
+    prof_resp = await run_in_threadpool(supabase.table("profiles").select("*").in_("user_email", emails).execute)
+    profiles_map = {p["user_email"]: p for p in prof_resp.data or []}
+    
+    comm_resp = await run_in_threadpool(supabase.table("comments").select("*").in_("post_id", p_ids).order("created_at").execute)
+    comments = comm_resp.data or []
     c_ids = [c["id"] for c in comments]
+    
     r_query = supabase.table("reactions").select("*")
     if c_ids: r_query = r_query.or_(f"post_id.in.({','.join(p_ids)}),comment_id.in.({','.join(c_ids)})")
     else: r_query = r_query.in_("post_id", p_ids)
-    reactions = (await run_in_threadpool(r_query.execute)).data or []
+    
+    react_resp = await run_in_threadpool(r_query.execute)
+    reactions = react_resp.data or []
+    
     res = []
     for p in posts:
         rec = PostRecord(**p)
-        auth = profiles.get(p["author_email"])
+        auth = profiles_map.get(p["author_email"])
         if auth: rec.author_name, rec.author_avatar = auth["full_name"], auth["avatar_url"]
         p_comments = [c for c in comments if c["post_id"] == p["id"]]
         for c in p_comments:
-            c_auth = profiles.get(c["author_email"])
+            c_auth = profiles_map.get(c["author_email"])
             if c_auth: c["author_name"], c["author_avatar"] = c_auth["full_name"], c_auth["avatar_url"]
             c["reactions"] = [r for r in reactions if r.get("comment_id") == c["id"]]
         rec.comments = [CommentRecord(**c) for c in p_comments]
