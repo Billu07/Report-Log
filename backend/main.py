@@ -144,7 +144,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 # --- APP SETUP ---
 
-app = FastAPI(title="Autolinium API", version="1.0.0")
+app = FastAPI(
+    title="Autolinium API", 
+    version="1.0.0",
+    root_path="/api/backend"
+)
 
 app.add_middleware(
     CORSMiddleware,
