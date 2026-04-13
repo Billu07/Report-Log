@@ -617,6 +617,7 @@ export default function Dashboard() {
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewingPost, setViewingPost] = useState<PostRecord | null>(null);
   const [viewingProfile, setViewingProfile] = useState<ProfileRecord | null>(null);
   
   // Compose Report State
@@ -870,6 +871,7 @@ export default function Dashboard() {
     setActiveTab(tab);
     setSelectedReport(null);
     setSelectedAuthor(null);
+    setViewingPost(null);
     setIsComposing(false);
   }
 
@@ -987,13 +989,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!mounted) return;
-    const shouldLockScroll = Boolean(viewingImage || viewingProfile || isCommandPaletteOpen);
+    const shouldLockScroll = Boolean(viewingImage || viewingProfile || viewingPost || isCommandPaletteOpen);
     const previousOverflow = document.body.style.overflow;
     if (shouldLockScroll) document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [mounted, viewingImage, viewingProfile, isCommandPaletteOpen]);
+  }, [mounted, viewingImage, viewingProfile, viewingPost, isCommandPaletteOpen]);
 
   useEffect(() => {
     setHasLoadedFeedDraft(false);
@@ -1548,6 +1550,9 @@ export default function Dashboard() {
   const uniqueAuthors = Array.from(new Set(reports.map(r => r.author_name).filter(Boolean)));
   const displayedReports = selectedAuthor ? reports.filter(r => r.author_name === selectedAuthor) : reports;
   const myReports = reports.filter(r => r.author_name === (profile?.full_name || session.user.user_metadata.full_name || session.user.email));
+  const myFeedPosts = posts
+    .filter((post) => post.author_email === session.user.email)
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
   const reportsToShow = isCEO ? displayedReports : myReports;
   const winsWallPosts = [...posts]
     .map((post) => ({ post, score: scorePostImpact(post) }))
@@ -1562,6 +1567,16 @@ export default function Dashboard() {
     : feedLens === "playbooks"
       ? playbookPosts
       : posts;
+  const publicProfilePosts = viewingProfile
+    ? posts
+        .filter((post) => post.author_email === viewingProfile.user_email)
+        .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+    : [];
+  const publicProfileReports = viewingProfile
+    ? reports
+        .filter((report) => report.author_email === viewingProfile.user_email)
+        .sort((a, b) => +new Date(b.report_date) - +new Date(a.report_date))
+    : [];
 
   const userAvatar = profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || session.user.email || "U")}&background=random`;
   const attachmentViewer = mounted && viewingImage
@@ -1604,9 +1619,55 @@ export default function Dashboard() {
         document.body
       )
     : null;
-  const publicProfilePosts = viewingProfile
-    ? posts.filter((post) => post.author_email === viewingProfile.user_email).slice(0, 5)
-    : [];
+  const postViewer = mounted && viewingPost
+    ? createPortal(
+        <div className="fixed inset-0 z-[510] flex items-center justify-center bg-black/72 p-4 backdrop-blur-md sm:p-6 md:p-10" onClick={() => setViewingPost(null)}>
+          <motion.div
+            initial={{ opacity: 0, y: 14, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.985 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="relative flex h-[min(90vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-[1.9rem] border border-[color:var(--border)] bg-[color:var(--card)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-14 items-center justify-between border-b border-[color:var(--border)] px-5">
+              <div className="flex items-center gap-3">
+                <img src={viewingPost.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingPost.author_name || "U")}&background=random`} className="h-8 w-8 rounded-xl border border-[color:var(--border)] object-cover" alt="" />
+                <div>
+                  <div className="text-sm font-black tracking-tight">{viewingPost.author_name || "Unknown"}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">{formatDistanceToNow(parseISO(viewingPost.created_at), { addSuffix: true })}</div>
+                </div>
+              </div>
+              <button onClick={() => setViewingPost(null)} className="flex h-8 w-8 items-center justify-center rounded-lg text-[color:var(--muted-foreground)] transition-all hover:bg-destructive/10 hover:text-destructive">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="grid min-h-0 flex-1 gap-0 md:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="min-h-0 overflow-y-auto p-5 custom-scrollbar">
+                {viewingPost.image_url ? (
+                  <div className="overflow-hidden rounded-2xl border border-[color:var(--border)]">
+                    <img src={viewingPost.image_url} className="max-h-[72vh] w-full object-cover" alt="" />
+                  </div>
+                ) : (
+                  <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-8 text-center">
+                    <span className="text-sm font-semibold text-[color:var(--muted-foreground)]">No media attached to this post.</span>
+                  </div>
+                )}
+              </div>
+              <aside className="border-t border-[color:var(--border)] bg-[color:var(--muted)]/30 p-5 md:border-l md:border-t-0">
+                <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed text-[color:var(--foreground)]/90">{viewingPost.content}</p>
+                <div className="mt-5 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
+                  <span>{viewingPost.reactions.length} reactions</span>
+                  <span>•</span>
+                  <span>{viewingPost.comments.length} comments</span>
+                </div>
+              </aside>
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )
+    : null;
   const profileViewer = mounted && viewingProfile
     ? createPortal(
         <div
@@ -1662,27 +1723,72 @@ export default function Dashboard() {
               </aside>
 
               <section className="min-h-0 overflow-y-auto custom-scrollbar px-5 py-6 md:px-7 md:py-8">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="font-heading text-xl font-black tracking-tight">Latest Feed Posts</h3>
-                  <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-                    {publicProfilePosts.length} visible
-                  </span>
-                </div>
-                <div className="flex flex-col gap-4 pb-2">
-                  {publicProfilePosts.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-5 py-10 text-center text-sm italic text-[color:var(--muted-foreground)]">
-                      No feed activity from this teammate yet.
+                <div className="flex flex-col gap-6 pb-2">
+                  <div>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="font-heading text-xl font-black tracking-tight">Brief Capsules</h3>
+                      <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                        {publicProfileReports.length} briefs
+                      </span>
                     </div>
-                  ) : (
-                    publicProfilePosts.map((post) => (
-                      <article key={post.id} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/90 p-5 shadow-sm dark:border-[#3a5885] dark:bg-[#112640]">
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[color:var(--foreground)]/90">{post.content}</p>
-                        <div className="mt-4 text-[10px] font-black uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]/80">
-                          {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
-                        </div>
-                      </article>
-                    ))
-                  )}
+                    {publicProfileReports.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-6 text-center text-xs italic text-[color:var(--muted-foreground)]">
+                        No brief capsules visible yet.
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2.5">
+                        {publicProfileReports.slice(0, 18).map((report) => (
+                          <button
+                            key={report.id}
+                            type="button"
+                            onClick={() => {
+                              setViewingProfile(null);
+                              setSelectedReport(report);
+                            }}
+                            className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-[color:var(--foreground)] transition-all hover:border-primary/25 hover:bg-primary/10 hover:text-primary dark:border-[#3a5885] dark:bg-[#112640]"
+                          >
+                            {format(parseISO(report.report_date), "MMM d")}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="font-heading text-xl font-black tracking-tight">Posts</h3>
+                      <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                        {publicProfilePosts.length} posts
+                      </span>
+                    </div>
+                    {publicProfilePosts.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-5 py-10 text-center text-sm italic text-[color:var(--muted-foreground)]">
+                        No feed activity from this teammate yet.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                        {publicProfilePosts.slice(0, 12).map((post) => (
+                          <button
+                            key={post.id}
+                            type="button"
+                            onClick={() => setViewingPost(post)}
+                            className="group relative aspect-square overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 text-left transition-all hover:border-primary/30 dark:border-[#3a5885] dark:bg-[#122742]"
+                          >
+                            {post.image_url ? (
+                              <img src={post.image_url} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" alt="" />
+                            ) : (
+                              <div className="flex h-full w-full items-end bg-gradient-to-tr from-primary/15 via-transparent to-primary/10 p-3">
+                                <p className="line-clamp-4 text-xs font-semibold leading-snug text-[color:var(--foreground)]/85">{post.content}</p>
+                              </div>
+                            )}
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent px-2 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white/90 opacity-0 transition-opacity group-hover:opacity-100">
+                              View Post
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </section>
             </div>
@@ -2341,17 +2447,60 @@ export default function Dashboard() {
                     </form>
                   </div>
                 </div>
-                <div className="px-4">
-                  <h3 className="font-heading text-2xl font-bold mb-8 tracking-tight flex items-center gap-3"><Activity size={24} className="text-primary"/> Recent Briefings</h3>
-                  <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-                    {myReports.length === 0 ? <div className="col-span-full py-20 border border-dashed border-[color:var(--border)] rounded-[2rem] text-center text-[color:var(--muted-foreground)] font-medium">No reports recorded yet.</div> : myReports.slice(0,6).map(report => (
-                       <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated group flex cursor-pointer flex-col rounded-[2rem] bg-gradient-to-br from-[color:var(--card)] to-transparent p-8 text-left hover:border-primary/30 dark:border-[#334f78] dark:bg-gradient-to-br dark:from-[#10233d] dark:to-transparent">
-                        <div className="mb-4 flex justify-between items-center"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-lg bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
-                        <h3 className="line-clamp-2 font-heading text-xl font-bold tracking-tight mb-2">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
-                        <p className="line-clamp-2 text-sm font-medium text-[color:var(--muted-foreground)] opacity-70">Review the details for this report.</p>
-                      </button>
-                    ))}
-                  </div>
+                <div className="grid grid-cols-1 gap-8 px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+                  <section className="rounded-[2rem] border border-[color:var(--border)] bg-[color:var(--card)]/90 p-6 dark:border-[#35527c] dark:bg-[#10243d]/92">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="font-heading text-xl font-black tracking-tight flex items-center gap-2"><FileText size={18} className="text-primary" /> Brief Capsules</h3>
+                      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">{myReports.length} total</span>
+                    </div>
+                    {myReports.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-8 text-center text-xs italic text-[color:var(--muted-foreground)]">No reports recorded yet.</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2.5">
+                        {myReports.slice(0, 30).map((report) => (
+                          <button
+                            key={report.id}
+                            onClick={() => setSelectedReport(report)}
+                            className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--foreground)] transition-all hover:border-primary/30 hover:bg-primary/10 hover:text-primary dark:border-[#3b5986] dark:bg-[#122844]"
+                          >
+                            {format(parseISO(report.report_date), "MMM d")}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-[2rem] border border-[color:var(--border)] bg-[color:var(--card)]/90 p-6 dark:border-[#35527c] dark:bg-[#10243d]/92">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="font-heading text-xl font-black tracking-tight flex items-center gap-2"><Activity size={18} className="text-primary" /> My Posts</h3>
+                      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">{myFeedPosts.length} posts</span>
+                    </div>
+                    {myFeedPosts.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-8 text-center text-xs italic text-[color:var(--muted-foreground)]">No posts shared yet.</div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                        {myFeedPosts.slice(0, 12).map((post) => (
+                          <button
+                            key={post.id}
+                            type="button"
+                            onClick={() => setViewingPost(post)}
+                            className="group relative aspect-square overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 transition-all hover:border-primary/30 dark:border-[#3a5885] dark:bg-[#132a45]"
+                          >
+                            {post.image_url ? (
+                              <img src={post.image_url} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" alt="" />
+                            ) : (
+                              <div className="flex h-full w-full items-end bg-gradient-to-tr from-primary/15 via-transparent to-primary/8 p-3 text-left">
+                                <p className="line-clamp-4 text-xs font-semibold leading-snug text-[color:var(--foreground)]/85">{post.content}</p>
+                              </div>
+                            )}
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent px-2 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white/90 opacity-0 transition-opacity group-hover:opacity-100">
+                              Open Post
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
               </motion.div>
             )}
@@ -2670,12 +2819,68 @@ export default function Dashboard() {
 
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (
-               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-2xl rounded-[2rem] border-primary/5 p-6 dark:border-[#2f4a72] dark:bg-[#0f223d]/92 sm:p-10 md:rounded-[2.5rem] md:p-12">
+               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-3xl rounded-[2rem] border-primary/5 p-6 dark:border-[#2f4a72] dark:bg-[#0f223d]/92 sm:p-10 md:rounded-[2.5rem] md:p-12">
                 <h3 className="mb-10 font-heading text-3xl font-black tracking-tight text-primary">System Configuration</h3>
                 <div className="space-y-8">
-                  <div className="rounded-2xl border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#38547c] dark:bg-[#132843]"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">User Identity</h4> <div className="flex items-center gap-4"><img src={userAvatar} className="h-12 w-12 rounded-2xl border border-primary/10 object-cover" alt="" /> <div><div className="font-bold text-lg">{profile?.full_name}</div> <div className="text-xs font-medium text-[color:var(--muted-foreground)]">{session.user.email}</div></div></div></div>
-                  <div className="rounded-2xl border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#38547c] dark:bg-[#132843]"><h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">API Link</h4> <p className="font-mono text-xs text-[color:var(--muted-foreground)] tracking-tight overflow-x-auto whitespace-nowrap">{API_BASE_URL}</p></div>
-                  <div className="pt-4"><button onClick={() => supabase.auth.signOut()} className="flex items-center gap-3 px-6 h-12 rounded-xl bg-destructive/5 text-destructive font-black uppercase tracking-[0.2em] text-[10px] border border-destructive/10 hover:bg-destructive hover:text-white transition-all w-fit">Sign Out</button></div>
+                  <div className="rounded-2xl border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#38547c] dark:bg-[#132843]">
+                    <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.3em] text-primary">User Identity</h4>
+                    <div className="flex items-center gap-4">
+                      <img src={userAvatar} className="h-12 w-12 rounded-2xl border border-primary/10 object-cover" alt="" />
+                      <div>
+                        <div className="font-bold text-lg">{profile?.full_name || session.user.user_metadata.full_name || "User"}</div>
+                        <div className="text-xs font-medium text-[color:var(--muted-foreground)]">{session.user.email}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <form
+                    onSubmit={(e) =>
+                      handleProfileUpdate(
+                        e,
+                        (e.currentTarget.elements.namedItem("settings-bio") as HTMLTextAreaElement).value,
+                        (e.currentTarget.elements.namedItem("settings-name") as HTMLInputElement).value
+                      )
+                    }
+                    className="rounded-2xl border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#38547c] dark:bg-[#132843]"
+                  >
+                    <h4 className="mb-4 text-[10px] font-black uppercase tracking-[0.3em] text-primary">Profile Controls</h4>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">Display Name</label>
+                        <input
+                          name="settings-name"
+                          defaultValue={profile?.full_name || session.user.user_metadata.full_name || ""}
+                          required
+                          className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-semibold outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">Bio</label>
+                        <textarea
+                          name="settings-bio"
+                          defaultValue={profile?.bio || ""}
+                          className="min-h-[90px] w-full resize-none rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm font-semibold outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                          placeholder="Describe your role and specialization..."
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button type="submit" disabled={isUpdatingProfile} className="button-primary h-10 rounded-xl px-5 text-xs font-black uppercase tracking-[0.15em]">
+                          {isUpdatingProfile ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Save Name & Bio"}
+                        </button>
+                        {isUpdatingProfile && <LoadingRail label="Syncing Profile" />}
+                      </div>
+                    </div>
+                  </form>
+
+                  <div className="rounded-2xl border border-[color:var(--border)] bg-black/5 p-6 dark:border-[#38547c] dark:bg-[#132843]">
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">API Link</h4>
+                    <p className="font-mono text-xs text-[color:var(--muted-foreground)] tracking-tight overflow-x-auto whitespace-nowrap">{API_BASE_URL}</p>
+                  </div>
+                  <div className="pt-2">
+                    <button onClick={() => supabase.auth.signOut()} className="flex items-center gap-3 px-6 h-12 rounded-xl bg-destructive/5 text-destructive font-black uppercase tracking-[0.2em] text-[10px] border border-destructive/10 hover:bg-destructive hover:text-white transition-all w-fit">
+                      Sign Out
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -2683,6 +2888,7 @@ export default function Dashboard() {
         </div>
       </main>
       {commandPalette}
+      {postViewer}
       {attachmentViewer}
     </div>
   );

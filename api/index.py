@@ -250,19 +250,30 @@ async def try_groq(updates: list[dict[str, Any]]) -> str:
     raise RuntimeError("All Groq models failed")
 
 async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
-    for name, call in [("gemini", try_gemini), ("groq", try_groq)]:
-        try:
-            res = await call(updates)
-            if res: return res, name
-        except Exception as e: logger.warning("%s failed: %s", name, e)
-    # Fallback to simple formatting
-    lines = ["# Daily Briefing Executive Summary", "Successful execution across all active projects."]
-    for u in updates:
-        lines.append(f"\n## {u['project_name']}")
-        lines.append(f"- {u['work_notes']}")
-        if u.get('image_url'):
-            lines.append(f"![Proof of Work]({u['image_url']})")
-    return "\n".join(lines), "fallback"
+    def clean_text(value: Any) -> str:
+        return " ".join(str(value or "").split())
+
+    lines = [
+        "# Daily Briefing",
+        "_Factual mode: this report uses submitted notes only and does not infer new work._",
+    ]
+    for index, update in enumerate(updates, start=1):
+        project_name = clean_text(update.get("project_name")) or f"Project {index}"
+        work_notes = clean_text(update.get("work_notes")) or "No execution notes submitted."
+        next_steps = clean_text(update.get("next_steps"))
+        blockers = clean_text(update.get("blockers"))
+        image_url = clean_text(update.get("image_url"))
+
+        lines.append(f"\n## {index}. {project_name}")
+        lines.append(f"- **Execution Notes:** {work_notes}")
+        if next_steps:
+            lines.append(f"- **Next Steps:** {next_steps}")
+        if blockers:
+            lines.append(f"- **Blockers:** {blockers}")
+        if image_url:
+            lines.append(f"![Proof of Work]({image_url})")
+
+    return "\n".join(lines), "factual-formatter"
 
 def build_optimize_prompt(updates: list[dict[str, Any]], style: str) -> str:
     serialized = json.dumps(
