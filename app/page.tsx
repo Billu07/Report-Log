@@ -796,12 +796,26 @@ export default function Dashboard() {
                           {/* Post Header */}
                           <div className="flex items-center justify-between p-6">
                             <div className="flex items-center gap-4">
-                              <div className="relative">
-                                <img src={postAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5" alt="" />
+                              <button 
+                                onClick={() => {
+                                  const p = profiles.find(p => p.user_email === post.author_email);
+                                  if (p) setViewingProfile(p);
+                                }}
+                                className="relative group/avatar"
+                              >
+                                <img src={postAvatar} className="h-12 w-12 rounded-2xl border border-[color:var(--border)] object-cover shrink-0 ring-4 ring-primary/5 transition-transform group-hover/avatar:scale-105" alt="" />
                                 <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 border-2 border-[color:var(--card)]" />
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="font-bold text-base text-[color:var(--foreground)] tracking-tight">{post.author_name}</span>
+                              </button>
+                              <div className="flex flex-col text-left">
+                                <button 
+                                  onClick={() => {
+                                    const p = profiles.find(p => p.user_email === post.author_email);
+                                    if (p) setViewingProfile(p);
+                                  }}
+                                  className="font-bold text-base text-[color:var(--foreground)] tracking-tight hover:text-primary transition-colors"
+                                >
+                                  {post.author_name}
+                                </button>
                                 <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-60">
                                   {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
                                 </span>
@@ -1048,12 +1062,27 @@ export default function Dashboard() {
                       const reportAvatar = authorProfile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(report.author_name)}&background=random&size=32&bold=true`;
                       
                       return (
-                        <button key={report.id} onClick={() => setSelectedReport(report)} className="card-elevated flex cursor-pointer flex-col p-8 text-left hover:shadow-2xl hover:border-primary/20 rounded-[2rem] transition-all duration-500 bg-gradient-to-br from-[color:var(--card)] to-transparent group">
+                        <div key={report.id} className="card-elevated flex flex-col p-8 hover:shadow-2xl hover:border-primary/20 rounded-[2rem] transition-all duration-500 bg-gradient-to-br from-[color:var(--card)] to-transparent group">
                           <div className="mb-5 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 px-3 py-1.5 rounded-full">{format(parseISO(report.report_date), "MMM d, yyyy")}</span> <div className="h-8 w-8 rounded-xl bg-[color:var(--muted)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><ArrowLeft size={16} className="rotate-180" /></div></div>
-                          <h3 className="mb-4 line-clamp-2 font-heading text-xl font-bold tracking-tight leading-tight group-hover:text-primary transition-colors">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
-                          {!selectedAuthor && isCEO && <div className="mb-5 flex items-center gap-3"><img src={reportAvatar} alt="" className="h-6 w-6 rounded-lg shadow-sm object-cover" /><span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">{report.author_name}</span></div>}
+                          <button onClick={() => setSelectedReport(report)} className="text-left">
+                            <h3 className="mb-4 line-clamp-2 font-heading text-xl font-bold tracking-tight leading-tight group-hover:text-primary transition-colors">{report.formatted_report.split("\n")[0].replace(/[*#\-]/g, "")}</h3>
+                          </button>
+                          {!selectedAuthor && isCEO && (
+                            <div className="mb-5 flex items-center gap-3">
+                              <button 
+                                onClick={() => {
+                                  const p = profiles.find(p => p.user_email === report.author_email);
+                                  if (p) setViewingProfile(p);
+                                }}
+                                className="h-6 w-6 rounded-lg overflow-hidden hover:ring-2 ring-primary/20 transition-all"
+                              >
+                                <img src={reportAvatar} alt="" className="h-full w-full object-cover" />
+                              </button>
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">{report.author_name}</span>
+                            </div>
+                          )}
                           <p className="mt-auto line-clamp-3 text-sm font-medium text-[color:var(--muted-foreground)] opacity-70 leading-relaxed italic border-l-2 border-[color:var(--border)] pl-4">"{JSON.parse(report.raw_text || "[]")[0]?.work_notes || report.raw_text}"</p>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -1201,8 +1230,25 @@ export default function Dashboard() {
                     <div className="mb-12 border-b border-[color:var(--border)] pb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
                       <div>
                         <div className="flex items-center gap-3 mb-6">
-                          <img src={reportAvatar} alt="" className="h-10 w-10 rounded-2xl shadow-lg shadow-primary/10 ring-2 ring-primary/5 object-cover" /> 
-                          <div><div className="font-black text-sm tracking-tight">{selectedReport.author_name}</div> <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div></div>
+                          <button 
+                            onClick={() => {
+                              if (authorProfile) setViewingProfile(authorProfile);
+                            }}
+                            className="h-10 w-10 rounded-2xl overflow-hidden shadow-lg shadow-primary/10 ring-2 ring-primary/5 hover:scale-105 transition-transform"
+                          >
+                            <img src={reportAvatar} alt="" className="h-full w-full object-cover" /> 
+                          </button>
+                          <div className="text-left">
+                            <button 
+                              onClick={() => {
+                                if (authorProfile) setViewingProfile(authorProfile);
+                              }}
+                              className="font-black text-sm tracking-tight hover:text-primary transition-colors"
+                            >
+                              {selectedReport.author_name}
+                            </button>
+                            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary opacity-60">Team Member</div>
+                          </div>
                         </div>
                         <h1 className="font-heading text-5xl font-black tracking-tighter leading-none mb-4">Daily Briefing</h1>
                         <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] opacity-60"><Calendar size={14} className="text-primary" /> {format(parseISO(selectedReport.report_date), "EEEE, MMMM do, yyyy")}</div>
@@ -1218,6 +1264,84 @@ export default function Dashboard() {
                 </motion.div>
               );
             })()}
+
+            {/* PUBLIC PROFILE MODAL */}
+            <AnimatePresence>
+              {viewingProfile && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 md:p-12 bg-black/60 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.98, y: 20 }} 
+                    animate={{ opacity: 1, scale: 1, y: 0 }} 
+                    exit={{ opacity: 0, scale: 0.98, y: 20 }}
+                    className="relative w-full max-w-4xl bg-[color:var(--card)] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <header className="absolute top-6 right-8 z-50">
+                      <button 
+                        onClick={() => setViewingProfile(null)}
+                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-black/40 backdrop-blur-md text-white border border-white/10 hover:bg-black/60 transition-all"
+                      >
+                        <X size={20} />
+                      </button>
+                    </header>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                      <div className="relative h-48 md:h-64 bg-[color:var(--muted)]">
+                        {viewingProfile.cover_url ? (
+                          <img src={viewingProfile.cover_url} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-tr from-primary/20 via-primary/5 to-transparent" />
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                      </div>
+
+                      <div className="px-10 md:px-16 pb-12 relative">
+                        <div className="relative -mt-16 md:-mt-20 mb-8">
+                          <div className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] overflow-hidden shadow-2xl relative">
+                            <img src={viewingProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingProfile.full_name)}&background=random&size=128&bold=true`} className="w-full h-full object-cover" alt="" />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-6">
+                          <div>
+                            <h2 className="font-heading text-4xl font-extrabold tracking-tight">{viewingProfile.full_name}</h2>
+                            <div className="text-sm font-bold text-primary opacity-80 uppercase tracking-[0.2em] mt-1">{viewingProfile.user_email}</div>
+                          </div>
+
+                          {viewingProfile.bio && (
+                            <div className="bg-black/5 rounded-[1.5rem] p-6 border border-[color:var(--border)] max-w-3xl">
+                              <label className="text-[10px] font-bold uppercase tracking-[0.3em] text-[color:var(--muted-foreground)] mb-3 block opacity-60">Teammate Bio</label>
+                              <p className="text-lg font-medium leading-relaxed opacity-90 italic">"{viewingProfile.bio}"</p>
+                            </div>
+                          )}
+
+                          <div className="mt-8">
+                            <h3 className="font-heading text-xl font-bold mb-6 tracking-tight flex items-center gap-3">
+                              <Activity size={20} className="text-primary"/> Recent Posts
+                            </h3>
+                            <div className="flex flex-col gap-6">
+                              {posts.filter(p => p.author_email === viewingProfile.user_email).length === 0 ? (
+                                <div className="py-10 border border-dashed border-[color:var(--border)] rounded-[2rem] text-center text-[color:var(--muted-foreground)] text-sm italic">No transmissions shared yet.</div>
+                              ) : (
+                                posts.filter(p => p.author_email === viewingProfile.user_email).slice(0, 5).map(post => (
+                                  <div key={post.id} className="bg-[color:var(--card)] border border-[color:var(--border)] rounded-[2rem] p-6 shadow-sm">
+                                    <p className="text-sm font-medium leading-relaxed opacity-90 mb-4">{post.content}</p>
+                                    <div className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-40">
+                                      {formatDistanceToNow(parseISO(post.created_at), { addSuffix: true })}
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                  <div className="absolute inset-0 -z-10" onClick={() => setViewingProfile(null)} />
+                </div>
+              )}
+            </AnimatePresence>
 
             {/* SLEEK GALLERY MODAL */}
             <AnimatePresence>
