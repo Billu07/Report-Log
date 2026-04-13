@@ -1098,8 +1098,11 @@ export default function Dashboard() {
     );
   }
 
-  async function openProfileViewer(profileEmail?: string | null) {
-    const normalizedEmail = (profileEmail || "").trim().toLowerCase();
+  async function openProfileViewer(params?: { email?: string | null; fullName?: string | null; avatarUrl?: string | null } | string | null) {
+    const payload = typeof params === "string" || params === null || params === undefined
+      ? { email: params ?? undefined, fullName: null, avatarUrl: null }
+      : params;
+    const normalizedEmail = (payload.email || "").trim().toLowerCase();
     if (!normalizedEmail) {
       notify("warning", "Profile is unavailable for this activity.");
       return;
@@ -1108,11 +1111,20 @@ export default function Dashboard() {
     const localProfile = profiles.find((member) => member.user_email?.toLowerCase() === normalizedEmail);
     if (localProfile) {
       setViewingProfile(localProfile);
-      return;
+    } else {
+      // Open instantly from feed/comment metadata to avoid dead-click UX.
+      const optimisticProfile: ProfileRecord = {
+        id: `optimistic-${normalizedEmail}`,
+        user_email: normalizedEmail,
+        full_name: (payload.fullName || "").trim() || normalizedEmail.split("@")[0] || "Team Member",
+        avatar_url: payload.avatarUrl || null,
+        cover_url: null,
+        bio: null,
+      };
+      setViewingProfile(optimisticProfile);
     }
 
     if (!session) {
-      notify("warning", "Sign in again to view teammate profiles.");
       return;
     }
 
@@ -1141,7 +1153,7 @@ export default function Dashboard() {
       setViewingProfile(normalizedProfile);
     } catch (err) {
       console.error(err);
-      notify("error", "Could not open this profile right now.");
+      // Keep optimistic profile if fetch fails; avoid blocking modal visibility.
     }
   }
 
@@ -1898,7 +1910,11 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => void openProfileViewer(viewingPost.author_email)}
+                  onClick={() => void openProfileViewer({
+                    email: viewingPost.author_email,
+                    fullName: viewingPost.author_name,
+                    avatarUrl: viewingPost.author_avatar ?? null,
+                  })}
                   className="h-8 w-8 overflow-hidden rounded-xl border border-[color:var(--border)] transition-all hover:scale-[1.03] hover:ring-2 hover:ring-primary/20"
                 >
                   <img src={viewingPost.author_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingPost.author_name || "U")}&background=random`} className="h-8 w-8 rounded-xl object-cover" alt="" />
@@ -1906,7 +1922,11 @@ export default function Dashboard() {
                 <div>
                   <button
                     type="button"
-                    onClick={() => void openProfileViewer(viewingPost.author_email)}
+                    onClick={() => void openProfileViewer({
+                      email: viewingPost.author_email,
+                      fullName: viewingPost.author_name,
+                      avatarUrl: viewingPost.author_avatar ?? null,
+                    })}
                     className="text-sm font-black tracking-tight transition-colors hover:text-primary"
                   >
                     {viewingPost.author_name || "Unknown"}
@@ -2543,7 +2563,11 @@ export default function Dashboard() {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    void openProfileViewer(post.author_email);
+                                    void openProfileViewer({
+                                      email: post.author_email,
+                                      fullName: post.author_name,
+                                      avatarUrl: post.author_avatar ?? null,
+                                    });
                                   }}
                                   className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary transition-colors hover:text-primary/80"
                                 >
@@ -2577,7 +2601,11 @@ export default function Dashboard() {
                               <div className="mt-2 flex items-center justify-between gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => void openProfileViewer(post.author_email)}
+                                  onClick={() => void openProfileViewer({
+                                    email: post.author_email,
+                                    fullName: post.author_name,
+                                    avatarUrl: post.author_avatar ?? null,
+                                  })}
                                   className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary transition-colors hover:text-primary/80"
                                 >
                                   {post.author_name}
@@ -2630,8 +2658,13 @@ export default function Dashboard() {
                           <div className="flex items-center justify-between px-6 pb-4 pt-6">
                             <div className="flex items-center gap-4">
                               <button 
+                                type="button"
                                 onClick={() => {
-                                  void openProfileViewer(post.author_email);
+                                  void openProfileViewer({
+                                    email: post.author_email,
+                                    fullName: post.author_name,
+                                    avatarUrl: post.author_avatar ?? null,
+                                  });
                                 }}
                                 className="relative group/avatar"
                               >
@@ -2640,8 +2673,13 @@ export default function Dashboard() {
                               </button>
                               <div className="flex flex-col text-left">
                                 <button 
+                                  type="button"
                                   onClick={() => {
-                                    void openProfileViewer(post.author_email);
+                                    void openProfileViewer({
+                                      email: post.author_email,
+                                      fullName: post.author_name,
+                                      avatarUrl: post.author_avatar ?? null,
+                                    });
                                   }}
                                   className="font-bold text-base text-[color:var(--foreground)] tracking-tight hover:text-primary transition-colors"
                                 >
@@ -2757,7 +2795,11 @@ export default function Dashboard() {
                                     <div key={comment.id} className="group/comment flex gap-4">
                                       <button
                                         type="button"
-                                        onClick={() => void openProfileViewer(comment.author_email)}
+                                        onClick={() => void openProfileViewer({
+                                          email: comment.author_email,
+                                          fullName: comment.author_name ?? null,
+                                          avatarUrl: comment.author_avatar ?? null,
+                                        })}
                                         className="h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-[color:var(--border)] ring-2 ring-primary/5 transition-all hover:scale-[1.03] hover:ring-primary/25"
                                       >
                                         <img src={commentAvatar} className="h-full w-full object-cover" alt="" />
@@ -2767,7 +2809,11 @@ export default function Dashboard() {
                                           <div className="flex items-center gap-3">
                                             <button
                                               type="button"
-                                              onClick={() => void openProfileViewer(comment.author_email)}
+                                              onClick={() => void openProfileViewer({
+                                                email: comment.author_email,
+                                                fullName: comment.author_name ?? null,
+                                                avatarUrl: comment.author_avatar ?? null,
+                                              })}
                                               className="font-bold text-sm tracking-tight transition-colors hover:text-primary"
                                             >
                                               {comment.author_name}
@@ -2973,8 +3019,13 @@ export default function Dashboard() {
                           {!selectedAuthor && isCEO && (
                             <div className="mb-5 flex items-center gap-3">
                               <button 
+                                type="button"
                                 onClick={() => {
-                                  void openProfileViewer(report.author_email);
+                                  void openProfileViewer({
+                                    email: report.author_email,
+                                    fullName: report.author_name,
+                                    avatarUrl: reportAvatar,
+                                  });
                                 }}
                                 className="h-6 w-6 rounded-lg overflow-hidden hover:ring-2 ring-primary/20 transition-all"
                               >
@@ -3263,8 +3314,13 @@ export default function Dashboard() {
                       <div>
                         <div className="mb-5 flex items-center gap-3">
                           <button 
+                            type="button"
                             onClick={() => {
-                              void openProfileViewer(selectedReport.author_email);
+                              void openProfileViewer({
+                                email: selectedReport.author_email,
+                                fullName: selectedReport.author_name,
+                                avatarUrl: reportAvatar,
+                              });
                             }}
                             className="h-10 w-10 rounded-2xl overflow-hidden shadow-lg shadow-primary/10 ring-2 ring-primary/5 hover:scale-105 transition-transform"
                           >
@@ -3272,8 +3328,13 @@ export default function Dashboard() {
                           </button>
                           <div className="text-left">
                             <button 
+                              type="button"
                               onClick={() => {
-                                void openProfileViewer(selectedReport.author_email);
+                                void openProfileViewer({
+                                  email: selectedReport.author_email,
+                                  fullName: selectedReport.author_name,
+                                  avatarUrl: reportAvatar,
+                                });
                               }}
                               className="font-black text-sm tracking-tight hover:text-primary transition-colors"
                             >
