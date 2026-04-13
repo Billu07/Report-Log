@@ -282,8 +282,19 @@ function AuthScreen({ onAuthSuccess }: { onAuthSuccess: (session: Session) => vo
   }
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[color:var(--background)] p-4 text-[color:var(--foreground)]">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="card-elevated w-full max-w-md p-8 sm:p-12">
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden p-4 text-[color:var(--foreground)]">
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url('/login-bg.png')" }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#081429]/78 via-[#0e2443]/66 to-[#10284f]/58" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.16),transparent_40%)]" />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="card-elevated relative z-10 w-full max-w-md border-white/20 bg-[color:var(--card)]/92 p-8 shadow-2xl backdrop-blur-md sm:p-12"
+      >
         <div className="mb-10 text-center flex flex-col items-center">
           <img src="/logo.png" alt="Company Logo" className="h-16 w-16 object-contain mb-6" />
           <h1 className="font-heading text-3xl font-extrabold tracking-tight text-primary">Autolinium</h1>
