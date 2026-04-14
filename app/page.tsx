@@ -698,6 +698,7 @@ export default function Dashboard() {
 
   const [selectedReport, setSelectedReport] = useState<ReportRecord | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
+  const [selectedAuthorEmail, setSelectedAuthorEmail] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [viewingPost, setViewingPost] = useState<PostRecord | null>(null);
@@ -1039,6 +1040,7 @@ export default function Dashboard() {
     setActiveTab(tab);
     setSelectedReport(null);
     setSelectedAuthor(null);
+    setSelectedAuthorEmail(null);
     setViewingPost(null);
     setIsNotificationsOpen(false);
     setIsComposing(false);
@@ -1047,6 +1049,7 @@ export default function Dashboard() {
   function openComposeBriefing() {
     setSelectedReport(null);
     setSelectedAuthor(null);
+    setSelectedAuthorEmail(null);
     setActiveTab("reports");
     setIsComposing(true);
   }
@@ -1379,6 +1382,7 @@ export default function Dashboard() {
     setAllProfiles([]);
     setSelectedReport(null);
     setSelectedAuthor(null);
+    setSelectedAuthorEmail(null);
     
     if (!session) { 
       setIsLoading(false); 
@@ -1552,6 +1556,7 @@ export default function Dashboard() {
     setActiveTab("feed");
     setSelectedReport(null);
     setSelectedAuthor(null);
+    setSelectedAuthorEmail(null);
     setIsComposing(false);
 
     if (notification.post_id) {
@@ -1881,12 +1886,31 @@ export default function Dashboard() {
   }
 
   const uniqueAuthors = Array.from(new Set(reports.map(r => r.author_name).filter(Boolean)));
-  const displayedReports = selectedAuthor ? reports.filter(r => r.author_name === selectedAuthor) : reports;
+  const displayedReports = selectedAuthorEmail
+    ? reports.filter((report) => (report.author_email || "").toLowerCase() === selectedAuthorEmail)
+    : selectedAuthor
+      ? reports.filter((report) => report.author_name === selectedAuthor)
+      : reports;
   const myReports = reports.filter(r => r.author_name === (profile?.full_name || session.user.user_metadata.full_name || session.user.email));
   const myFeedPosts = posts
     .filter((post) => post.author_email === session.user.email)
     .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
   const reportsToShow = isCEO ? displayedReports : myReports;
+  const dashboardProfileMembers = profiles
+    .filter((member) => (member.user_email || "").toLowerCase() !== (session.user.email || "").toLowerCase())
+    .sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""));
+  const dashboardFallbackMembers: ProfileRecord[] = uniqueAuthors.map((author, index) => {
+    const firstReport = reports.find((report) => report.author_name === author);
+    return {
+      id: `fallback-member-${index}`,
+      user_email: (firstReport?.author_email || `${author.toLowerCase().replace(/\s+/g, ".")}@autolinium.local`) as string,
+      full_name: author,
+      avatar_url: null,
+      cover_url: null,
+      bio: null,
+    };
+  });
+  const dashboardMembers = dashboardProfileMembers.length > 0 ? dashboardProfileMembers : dashboardFallbackMembers;
   const winsWallPosts = [...posts]
     .map((post) => ({ post, score: scorePostImpact(post) }))
     .filter(({ post, score }) => postHasWinSignal(post) || score >= 10)
@@ -2392,11 +2416,11 @@ export default function Dashboard() {
 
         <nav className="flex flex-1 flex-col gap-1">
           {isCEO && (
-            <button onClick={() => { setActiveTab("dashboard"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "dashboard" ? "active" : ""}`}>
+            <button onClick={() => { setActiveTab("dashboard"); setSelectedReport(null); setSelectedAuthor(null); setSelectedAuthorEmail(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "dashboard" ? "active" : ""}`}>
               <LayoutDashboard size={18} /> CEO Dashboard
             </button>
           )}
-          <button onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "reports" && !selectedAuthor ? "active" : ""}`}>
+          <button onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setSelectedAuthorEmail(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "reports" && !selectedAuthor ? "active" : ""}`}>
             <FileText size={18} /> {isCEO ? "Execution Logs" : "My Briefings"}
           </button>
           <button onClick={() => { setActiveTab("feed"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "feed" ? "active" : ""}`}>
@@ -2479,14 +2503,14 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {isCEO && (
               <button
-                onClick={() => { setActiveTab("dashboard"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }}
+                onClick={() => { setActiveTab("dashboard"); setSelectedReport(null); setSelectedAuthor(null); setSelectedAuthorEmail(null); setIsComposing(false); }}
                 className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "dashboard" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
               >
                 Dashboard
               </button>
             )}
             <button
-              onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setIsComposing(false); }}
+              onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setSelectedAuthorEmail(null); setIsComposing(false); }}
               className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "reports" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
             >
               Reports
@@ -3032,24 +3056,63 @@ export default function Dashboard() {
             {/* DASHBOARD: TEAM */}
             {!isLoading && !isComposing && !selectedReport && activeTab === "dashboard" && (
               <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-10">
-                <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {uniqueAuthors.map(author => {
-                    const authorReports = reports.filter(r => r.author_name === author);
-                    return (
-                      <button key={author} onClick={() => { setSelectedAuthor(author); setActiveTab("reports"); setReportsViewMode("list"); }} className="card-elevated flex cursor-pointer flex-col items-center justify-center p-10 text-center transition-all duration-500 hover:-translate-y-2 rounded-[2.5rem] border-primary/5 group relative overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        <div className="mb-6 relative">
-                          <div className="h-28 w-28 overflow-hidden rounded-[2rem] border-[4px] border-[color:var(--background)] shadow-xl relative z-10">
-                            <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(author)}&background=random&size=128&bold=true`} alt={author} className="h-full w-full object-cover" />
+                {dashboardMembers.length === 0 ? (
+                  <div className="rounded-[1.75rem] border border-dashed border-[color:var(--border)] px-6 py-14 text-center text-sm font-semibold italic text-[color:var(--muted-foreground)]">
+                    No team members found yet.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                    {dashboardMembers.map((member) => {
+                      const memberEmail = (member.user_email || "").toLowerCase();
+                      const memberReports = reports.filter(
+                        (report) =>
+                          ((report.author_email || "").toLowerCase() === memberEmail) ||
+                          (!report.author_email && report.author_name === member.full_name)
+                      );
+                      const memberPosts = posts.filter((post) => (post.author_email || "").toLowerCase() === memberEmail);
+                      const latestReport = [...memberReports].sort((a, b) => +new Date(b.report_date) - +new Date(a.report_date))[0];
+                      const avatar = member.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.full_name)}&background=random&size=128&bold=true`;
+
+                      return (
+                        <button
+                          key={member.user_email || member.id}
+                          onClick={() => {
+                            setSelectedAuthor(member.full_name);
+                            setSelectedAuthorEmail(memberEmail || null);
+                            setActiveTab("reports");
+                            setReportsViewMode("list");
+                          }}
+                          className="card-elevated group relative flex cursor-pointer flex-col gap-4 overflow-hidden rounded-[2rem] border border-primary/10 bg-[color:var(--card)]/90 p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-xl dark:border-[#324f79] dark:bg-[#10243f]/90"
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                          <div className="relative flex items-center gap-4">
+                            <img src={avatar} alt={member.full_name} className="h-14 w-14 rounded-2xl border border-[color:var(--border)] object-cover shadow-sm" />
+                            <div className="min-w-0">
+                              <h4 className="truncate font-heading text-lg font-black tracking-tight">{member.full_name}</h4>
+                              <p className="truncate text-[11px] font-semibold text-[color:var(--muted-foreground)]">{member.user_email}</p>
+                            </div>
                           </div>
-                          <div className="absolute -bottom-2 -right-2 h-10 w-10 bg-primary text-white rounded-xl flex items-center justify-center shadow-lg z-20 font-bold border-4 border-[color:var(--card)]">{authorReports.length}</div>
-                        </div>
-                        <h4 className="font-heading text-xl font-extrabold tracking-tight relative z-10">{author}</h4>
-                        <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)] opacity-60 relative z-10">Team Member</div>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <div className="relative grid grid-cols-3 gap-2">
+                            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-2.5 py-2 text-center">
+                              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">Briefs</p>
+                              <p className="mt-1 text-base font-black text-primary">{memberReports.length}</p>
+                            </div>
+                            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-2.5 py-2 text-center">
+                              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">Posts</p>
+                              <p className="mt-1 text-base font-black text-primary">{memberPosts.length}</p>
+                            </div>
+                            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-2.5 py-2 text-center">
+                              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">Last</p>
+                              <p className="mt-1 text-[11px] font-black uppercase tracking-[0.08em] text-primary">
+                                {latestReport ? format(parseISO(latestReport.report_date), "MMM d") : "--"}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -3058,7 +3121,7 @@ export default function Dashboard() {
                <motion.div key="list" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-10">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                   <div>
-                    {selectedAuthor && <button onClick={() => setActiveTab("dashboard")} className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary hover:translate-x-1 transition-transform"><ArrowLeft size={14} /> Back to Team</button>}
+                    {selectedAuthor && <button onClick={() => { setActiveTab("dashboard"); setSelectedAuthor(null); setSelectedAuthorEmail(null); }} className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary hover:translate-x-1 transition-transform"><ArrowLeft size={14} /> Back to Team</button>}
                     <h3 className="font-heading text-3xl font-extrabold tracking-tight">{selectedAuthor ? `${selectedAuthor}'s Briefings` : isCEO ? "Team Briefings" : "My Daily Briefings"}</h3>
                   </div>
                   <div className="flex rounded-xl border border-[color:var(--border)] bg-[color:var(--input)] p-1.5 self-start">
