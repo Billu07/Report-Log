@@ -359,6 +359,28 @@ def extract_json_array_block(text: str) -> Optional[list[Any]]:
 def normalize_optimized_updates(
     original_updates: list[dict[str, Any]], candidate_updates: list[Any]
 ) -> list[dict[str, Any]]:
+    def normalize_text(value: Any) -> str:
+        return " ".join(str(value or "").split())
+
+    def extract_numeric_tokens(value: str) -> set[str]:
+        return set(re.findall(r"\b\d+(?:\.\d+)?%?\b", value))
+
+    def safe_rewrite(original: Any, candidate: Any) -> str:
+        original_text = normalize_text(original)
+        candidate_text = normalize_text(candidate)
+        if not candidate_text:
+            return original_text
+        if not original_text:
+            # Do not allow AI to fabricate missing content fields.
+            return original_text
+        original_len = len(original_text)
+        candidate_len = len(candidate_text)
+        if candidate_len < int(original_len * 0.45) or candidate_len > int(original_len * 1.65):
+            return original_text
+        if extract_numeric_tokens(original_text) != extract_numeric_tokens(candidate_text):
+            return original_text
+        return candidate_text
+
     def normalize_completion_percent(value: Any) -> Optional[int]:
         if value in (None, "") or isinstance(value, bool):
             return None
@@ -371,25 +393,47 @@ def normalize_optimized_updates(
     normalized: list[dict[str, Any]] = []
     for idx, original in enumerate(original_updates):
         candidate = candidate_updates[idx] if idx < len(candidate_updates) and isinstance(candidate_updates[idx], dict) else {}
-        project_name = str(candidate.get("project_name") or original.get("project_name") or "").strip()
-        work_notes = str(candidate.get("work_notes") or original.get("work_notes") or "").strip()
-        next_steps_raw = candidate.get("next_steps")
-        blockers_raw = candidate.get("blockers")
-        image_url_raw = candidate.get("image_url")
+        original_project_name = normalize_text(original.get("project_name"))
+        original_work_notes = normalize_text(original.get("work_notes"))
+        original_next_steps = normalize_text(original.get("next_steps"))
+        original_blockers = normalize_text(original.get("blockers"))
+        original_image_url = normalize_text(original.get("image_url"))
+
+        candidate_project_name = candidate.get("project_name")
+        candidate_work_notes = candidate.get("work_notes")
+        candidate_next_steps = candidate.get("next_steps")
+        candidate_blockers = candidate.get("blockers")
+        candidate_image_url = normalize_text(candidate.get("image_url"))
+
+        project_name = safe_rewrite(original_project_name, candidate_project_name) or original_project_name
+        work_notes = safe_rewrite(original_work_notes, candidate_work_notes) or original_work_notes
+
+        next_steps = None
+        if original_next_steps:
+            rewritten_next_steps = safe_rewrite(original_next_steps, candidate_next_steps)
+            next_steps = rewritten_next_steps or original_next_steps
+
+        blockers = None
+        if original_blockers:
+            rewritten_blockers = safe_rewrite(original_blockers, candidate_blockers)
+            blockers = rewritten_blockers or original_blockers
+
+        # Preserve attachment URL exactly unless original is missing.
+        if original_image_url:
+            image_url = original_image_url
+        else:
+            image_url = candidate_image_url or None
+
         completion_candidate = normalize_completion_percent(candidate.get("completion_percent"))
         completion_original = normalize_completion_percent(original.get("completion_percent"))
 
-        next_steps = (str(next_steps_raw).strip() if next_steps_raw not in (None, "") else None)
-        blockers = (str(blockers_raw).strip() if blockers_raw not in (None, "") else None)
-        image_url = (str(image_url_raw).strip() if image_url_raw not in (None, "") else None)
-
         normalized.append(
             {
-                "project_name": project_name or str(original.get("project_name") or "").strip(),
-                "work_notes": work_notes or str(original.get("work_notes") or "").strip(),
-                "next_steps": next_steps if next_steps is not None else original.get("next_steps"),
-                "blockers": blockers if blockers is not None else original.get("blockers"),
-                "image_url": image_url if image_url is not None else original.get("image_url"),
+                "project_name": project_name or original_project_name,
+                "work_notes": work_notes or original_work_notes,
+                "next_steps": next_steps if next_steps else (original_next_steps or None),
+                "blockers": blockers if blockers else (original_blockers or None),
+                "image_url": image_url if image_url else (original_image_url or None),
                 "completion_percent": completion_candidate if completion_candidate is not None else completion_original,
             }
         )
@@ -563,18 +607,20 @@ async def get_all_reports(user: Any = Depends(get_current_user)):
 async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(get_current_user)):
     prof_resp = await run_in_threadpool(supabase.table("profiles").select("full_name").eq("user_email", user.email).execute)
     author_name = prof_resp.data[0]["full_name"] if prof_resp.data else user.email
-    updates_dicts = [u.model_dump() for u in request.updates]
-    formatted, provider = await generate_report(updates_dicts)
+    original_updates = [u.model_dump() for u in request.updates]
+    optimized_updates, optimize_provider = await optimize_updates(original_updates, "executive")
+    formatted, format_provider = await generate_report(optimized_updates)
     payload = {
         "report_date": (request.report_date or date.today()).isoformat(),
         "author_name": author_name,
         "author_email": user.email,
-        "raw_text": json.dumps(updates_dicts),
+        "raw_text": json.dumps(original_updates),
         "formatted_report": formatted,
-        "image_url": next((u["image_url"] for u in updates_dicts if u["image_url"]), None)
+        "image_url": next((u["image_url"] for u in optimized_updates if u["image_url"]), None)
     }
     resp = await run_in_threadpool(supabase.table("daily_reports").insert(payload).execute)
-    return SubmitReportResponse(message="Created", report=DailyReportRecord(**resp.data[0]), provider=provider)
+    provider_chain = f"optimize:{optimize_provider}|format:{format_provider}"
+    return SubmitReportResponse(message="Created", report=DailyReportRecord(**resp.data[0]), provider=provider_chain)
 
 @app.post("/api/backend/optimize-updates", response_model=OptimizeUpdatesResponse)
 async def optimize_report_updates(request: OptimizeUpdatesRequest, user: Any = Depends(get_current_user)):
