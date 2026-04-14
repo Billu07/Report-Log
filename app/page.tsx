@@ -736,6 +736,7 @@ export default function Dashboard() {
   const [notificationsLastSeenAt, setNotificationsLastSeenAt] = useState<number>(0);
   const [focusedPostId, setFocusedPostId] = useState<string | null>(null);
   const profileViewerOpenGuardRef = useRef(0);
+  const briefingFormRef = useRef<HTMLFormElement | null>(null);
 
   const { startUpload } = useUploadThing("imageUploader");
 
@@ -1643,6 +1644,39 @@ export default function Dashboard() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function handleSaveBriefingClick() {
+    if (isSubmitting || isOptimizingUpdates) return;
+
+    const firstInvalidIndex = updates.findIndex(
+      (update) => !update.projectName.trim() || update.workNotes.trim().length < 5
+    );
+    if (firstInvalidIndex !== -1) {
+      notify(
+        "warning",
+        `Complete Project ${firstInvalidIndex + 1}: add a project name and at least 5 characters in work notes.`
+      );
+      return;
+    }
+
+    const form = briefingFormRef.current;
+    if (!form) {
+      notify("error", "Briefing form is not ready. Please retry.");
+      return;
+    }
+
+    if (!form.reportValidity()) {
+      notify("warning", "Please complete all required fields.");
+      return;
+    }
+
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+      return;
+    }
+
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   }
 
   async function handlePostSubmit(e: FormEvent) {
@@ -3226,7 +3260,12 @@ export default function Dashboard() {
                     </button>
                   </header>
 
-                  <form id="briefing-entry-form" onSubmit={handleReportSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
+                  <form
+                    id="briefing-entry-form"
+                    ref={briefingFormRef}
+                    onSubmit={handleReportSubmit}
+                    className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar"
+                  >
                     <div className="flex flex-col gap-2">
                       <label className="text-xs font-bold text-[color:var(--muted-foreground)] uppercase tracking-wider">Report Date</label>
                       <input required type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--input)] text-sm font-medium focus:ring-2 ring-primary/20 outline-none transition-all" />
@@ -3386,7 +3425,12 @@ export default function Dashboard() {
 
                   <footer className="px-6 py-4 border-t border-[color:var(--border)] bg-[color:var(--muted)]/30 flex items-center justify-end gap-3">
                     <button type="button" onClick={resetComposer} className="px-4 py-2 text-sm font-bold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors">Cancel</button>
-                    <button type="submit" form="briefing-entry-form" disabled={isSubmitting || isOptimizingUpdates || updates.some(u => !u.projectName || !u.workNotes)} className="button-primary px-5 py-2 h-9 rounded-lg text-xs font-bold uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={handleSaveBriefingClick}
+                      disabled={isSubmitting || isOptimizingUpdates}
+                      className="button-primary px-5 py-2 h-9 rounded-lg text-xs font-bold uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-70"
+                    >
                       {isSubmitting ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Save Briefing"}
                     </button>
                   </footer>
