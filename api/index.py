@@ -160,6 +160,7 @@ class NotificationRecord(BaseModel):
     actor_avatar: Optional[str] = None
     post_id: Optional[str] = None
     comment_id: Optional[str] = None
+    report_id: Optional[str] = None
     title: str
     body: str
 
@@ -713,6 +714,11 @@ async def get_notifications(user: Any = Depends(get_current_user)):
     reactions_resp = await run_in_threadpool(reactions_query.execute)
     reactions = reactions_resp.data or []
 
+    reports_resp = await run_in_threadpool(
+        supabase.table("daily_reports").select("*").order("created_at", desc=True).limit(100).execute
+    )
+    reports = reports_resp.data or []
+
     actor_emails = set()
     for p in posts:
         if p.get("author_email"):
@@ -723,6 +729,9 @@ async def get_notifications(user: Any = Depends(get_current_user)):
     for r in reactions:
         if r.get("author_email"):
             actor_emails.add(r["author_email"])
+    for rep in reports:
+        if rep.get("author_email"):
+            actor_emails.add(rep["author_email"])
 
     profiles_map: dict[str, dict[str, Any]] = {}
     if actor_emails:
@@ -752,13 +761,14 @@ async def get_notifications(user: Any = Depends(get_current_user)):
         actor_email: str,
         post_id: Optional[str],
         comment_id: Optional[str],
+        report_id: Optional[str] = None,
         title: str,
         body: str,
     ) -> None:
         if created_at < seven_days_ago:
             return
         actor_name, actor_avatar = actor_info(actor_email)
-        notif_id = f"{kind}:{post_id or ''}:{comment_id or ''}:{actor_email}:{int(created_at.timestamp())}"
+        notif_id = f"{kind}:{post_id or ''}:{comment_id or ''}:{report_id or ''}:{actor_email}:{int(created_at.timestamp())}"
         notifications.append(
             NotificationRecord(
                 id=notif_id,
@@ -769,6 +779,7 @@ async def get_notifications(user: Any = Depends(get_current_user)):
                 actor_avatar=actor_avatar,
                 post_id=post_id,
                 comment_id=comment_id,
+                report_id=report_id,
                 title=title,
                 body=body,
             )
@@ -862,6 +873,37 @@ async def get_notifications(user: Any = Depends(get_current_user)):
                 comment_id=reaction_comment_id,
                 title=f"Reaction On Your Comment {reaction_emoji}",
                 body="A teammate reacted to your comment.",
+            )
+
+    for report in reports:
+        report_author = (report.get("author_email") or "").lower()
+        if not report_author or report_author == user_email:
+            continue
+        report_created = parse_datetime_value(report.get("created_at"))
+        report_content = str(report.get("formatted_report") or "")
+
+        if user_email in CEO_EMAILS:
+            append_notification(
+                kind="new_report",
+                created_at=report_created,
+                actor_email=report_author,
+                post_id=None,
+                comment_id=None,
+                report_id=report.get("id"),
+                title="New Daily Report Submitted",
+                body=(report_content[:140] + "...") if len(report_content) > 140 else report_content or "A team member submitted a report.",
+            )
+
+        if contains_mention(report_content, mention_tokens):
+            append_notification(
+                kind="mention_report",
+                created_at=report_created,
+                actor_email=report_author,
+                post_id=None,
+                comment_id=None,
+                report_id=report.get("id"),
+                title="You Were Mentioned In A Report",
+                body=(report_content[:140] + "...") if len(report_content) > 140 else report_content,
             )
 
     notifications.sort(key=lambda n: n.created_at, reverse=True)

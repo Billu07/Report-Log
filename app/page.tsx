@@ -159,6 +159,7 @@ type NotificationItem = {
   actor_avatar?: string | null;
   post_id?: string | null;
   comment_id?: string | null;
+  report_id?: string | null;
   title: string;
   body: string;
 };
@@ -1554,20 +1555,34 @@ export default function Dashboard() {
 
   function handleNotificationClick(notification: NotificationItem) {
     setIsNotificationsOpen(false);
-    setActiveTab("feed");
-    setSelectedReport(null);
-    setSelectedAuthor(null);
-    setSelectedAuthorEmail(null);
     setIsComposing(false);
 
-    if (notification.post_id) {
-      setFocusedPostId(notification.post_id);
-      window.setTimeout(() => {
-        const element = document.getElementById(`feed-post-${notification.post_id}`);
-        if (element) {
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }, 160);
+    if (notification.report_id) {
+      setActiveTab("reports");
+      const report = reports.find(r => r.id === notification.report_id);
+      if (report) {
+        setSelectedReport(report);
+      } else {
+        // Fallback if not loaded yet
+        setSelectedReport(null);
+        setSelectedAuthor(notification.actor_name || null);
+        setSelectedAuthorEmail(notification.actor_email || null);
+      }
+    } else {
+      setActiveTab("feed");
+      setSelectedReport(null);
+      setSelectedAuthor(null);
+      setSelectedAuthorEmail(null);
+
+      if (notification.post_id) {
+        setFocusedPostId(notification.post_id);
+        window.setTimeout(() => {
+          const element = document.getElementById(`feed-post-${notification.post_id}`);
+          if (element) {
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 160);
+      }
     }
   }
 
@@ -2136,11 +2151,13 @@ export default function Dashboard() {
                   <p className="mt-1 break-all text-xs font-semibold text-[color:var(--muted-foreground)]">{viewingProfile.user_email}</p>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2">
-                    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-primary/90">Briefs</p>
-                    <p className="mt-1 text-lg font-black leading-none">{publicProfileReports.length}</p>
-                  </div>
-                  <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2">
+                  {(isCEO || viewingProfile.user_email === session?.user?.email) && (
+                    <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2">
+                      <p className="text-[9px] font-black uppercase tracking-[0.15em] text-primary/90">Briefs</p>
+                      <p className="mt-1 text-lg font-black leading-none">{publicProfileReports.length}</p>
+                    </div>
+                  )}
+                  <div className={`rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 ${!(isCEO || viewingProfile.user_email === session?.user?.email) ? "col-span-2" : ""}`}>
                     <p className="text-[9px] font-black uppercase tracking-[0.15em] text-primary/90">Posts</p>
                     <p className="mt-1 text-lg font-black leading-none">{publicProfilePosts.length}</p>
                   </div>
@@ -2159,35 +2176,37 @@ export default function Dashboard() {
 
               <section className="min-h-0 overflow-y-auto custom-scrollbar px-5 py-6 md:px-7 md:py-8">
                 <div className="flex flex-col gap-6 pb-2">
-                  <div>
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="font-heading text-xl font-black tracking-tight">Brief Capsules</h3>
-                      <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-                        {publicProfileReports.length} briefs
-                      </span>
+                  {(isCEO || viewingProfile.user_email === session?.user?.email) && (
+                    <div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <h3 className="font-heading text-xl font-black tracking-tight">Brief Capsules</h3>
+                        <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                          {publicProfileReports.length} briefs
+                        </span>
+                      </div>
+                      {publicProfileReports.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-6 text-center text-xs italic text-[color:var(--muted-foreground)]">
+                          No brief capsules visible yet.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {publicReportCapsules.slice(0, 24).map((report) => (
+                            <button
+                              key={report.id}
+                              type="button"
+                              onClick={() => {
+                                setViewingProfile(null);
+                                setSelectedReport(report);
+                              }}
+                              className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[color:var(--foreground)] transition-all hover:border-primary/25 hover:text-primary dark:border-[#3a5885] dark:bg-[#112640]"
+                            >
+                              {format(parseISO(report.report_date), "MMM d")}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    {publicProfileReports.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-6 text-center text-xs italic text-[color:var(--muted-foreground)]">
-                        No brief capsules visible yet.
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {publicReportCapsules.slice(0, 24).map((report) => (
-                          <button
-                            key={report.id}
-                            type="button"
-                            onClick={() => {
-                              setViewingProfile(null);
-                              setSelectedReport(report);
-                            }}
-                            className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[color:var(--foreground)] transition-all hover:border-primary/25 hover:text-primary dark:border-[#3a5885] dark:bg-[#112640]"
-                          >
-                            {format(parseISO(report.report_date), "MMM d")}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  )}
 
                   <div>
                     <div className="mb-3 flex items-center justify-between">
@@ -3516,8 +3535,6 @@ export default function Dashboard() {
               );
             })()}
 
-            {profileViewer}
-
             {/* SETTINGS VIEW */}
             {!isLoading && activeTab === "settings" && !isComposing && !selectedReport && (
                <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-elevated max-w-3xl rounded-[2rem] border-primary/5 p-6 dark:border-[#2f4a72] dark:bg-[#0f223d]/92 sm:p-10 md:rounded-[2.5rem] md:p-12">
@@ -3591,6 +3608,7 @@ export default function Dashboard() {
       {commandPalette}
       {postViewer}
       {attachmentViewer}
+      {profileViewer}
     </div>
   );
 }
