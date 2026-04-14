@@ -2122,35 +2122,49 @@ export default function Dashboard() {
             className="relative my-2 flex max-h-[calc(100dvh-2.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-[color:var(--border)]/80 bg-[color:var(--card)] shadow-[0_28px_80px_-32px_rgba(0,0,0,0.68)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <header className="relative h-40 overflow-hidden border-b border-[color:var(--border)] md:h-52">
+            <header className="relative h-48 overflow-hidden md:h-64">
               {viewingProfile.cover_url ? (
                 <img src={viewingProfile.cover_url} className="h-full w-full object-cover" alt="" />
               ) : (
-                <div className="h-full w-full bg-gradient-to-tr from-primary/30 via-primary/12 to-transparent" />
+                <div className="h-full w-full bg-gradient-to-br from-primary/40 via-primary/10 to-[#020817]" />
               )}
-              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/55" />
-              <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border border-white/25 bg-black/35 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-white/90 backdrop-blur-xl sm:left-6 sm:top-6">
-                <Activity size={12} />
-                Team Profile
+              <div className="absolute inset-0 bg-gradient-to-t from-[#020817]/80 via-transparent to-black/20" />
+              
+              <div className="absolute left-6 top-6 flex items-center gap-2 rounded-full border border-white/20 bg-black/40 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-white/90 backdrop-blur-md shadow-xl">
+                <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1DB954]" />
+                Profile
               </div>
+
               <button
                 onClick={() => setViewingProfile(null)}
-                className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-black/40 text-white transition-all hover:bg-black/65 sm:right-6 sm:top-6"
+                className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/20 bg-black/40 text-white transition-all hover:scale-105 hover:bg-black/60 hover:shadow-xl active:scale-95"
               >
-                <X size={18} />
+                <X size={20} />
               </button>
             </header>
 
-            <div className="grid min-h-0 flex-1 gap-0 md:grid-cols-[280px_minmax(0,1fr)]">
-              <aside className="border-b border-[color:var(--border)] bg-[color:var(--muted)]/35 px-5 py-6 md:border-b-0 md:border-r md:px-6 md:py-8">
-                <div className="mx-auto -mt-20 h-28 w-28 overflow-hidden rounded-[1.65rem] border-[5px] border-[color:var(--card)] bg-[color:var(--card)] shadow-2xl md:mx-0 md:h-32 md:w-32">
-                  <img src={viewingProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingProfile.full_name)}&background=random&size=128&bold=true`} className="h-full w-full object-cover" alt="" />
+            <div className="relative grid min-h-0 flex-1 gap-0 md:grid-cols-[300px_minmax(0,1fr)]">
+              <aside className="relative z-10 border-b border-[color:var(--border)] bg-[color:var(--card)]/50 px-6 py-6 backdrop-blur-sm md:border-b-0 md:border-r md:px-8 md:py-10">
+                <div className="relative mx-auto -mt-24 h-32 w-32 md:mx-0 md:-mt-32 md:h-40 md:w-40">
+                  <div className="h-full w-full overflow-hidden rounded-[2.5rem] border-[6px] border-[color:var(--card)] bg-[color:var(--card)] shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+                    <img 
+                      src={viewingProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(viewingProfile.full_name)}&background=random&size=128&bold=true`} 
+                      className="h-full w-full object-cover transition-transform duration-500 hover:scale-110" 
+                      alt="" 
+                    />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full border-4 border-[color:var(--card)] bg-[#1DB954] shadow-lg" />
                 </div>
-                <div className="mt-5">
-                  <h2 className="font-heading text-2xl font-black tracking-tight md:text-[1.75rem]">{viewingProfile.full_name}</h2>
-                  <p className="mt-1 break-all text-xs font-semibold text-[color:var(--muted-foreground)]">{viewingProfile.user_email}</p>
+
+                <div className="mt-6 text-center md:text-left">
+                  <h2 className="font-heading text-2xl font-black tracking-tight md:text-3xl">{viewingProfile.full_name}</h2>
+                  <div className="mt-1.5 flex items-center justify-center gap-2 md:justify-start">
+                    <span className="h-1 w-1 rounded-full bg-primary/60" />
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-80">{viewingProfile.user_email}</p>
+                  </div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2">
+
+                <div className="mt-8 grid grid-cols-2 gap-3">
                   {(isCEO || viewingProfile.user_email === session?.user?.email) && (
                     <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2">
                       <p className="text-[9px] font-black uppercase tracking-[0.15em] text-primary/90">Briefs</p>
