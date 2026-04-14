@@ -269,6 +269,14 @@ async def try_groq(updates: list[dict[str, Any]]) -> str:
     raise RuntimeError("All Groq models failed")
 
 async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
+    for name, call in [("gemini", try_gemini), ("groq", try_groq)]:
+        try:
+            res = await call(updates)
+            if res:
+                return res, name
+        except Exception as e:
+            logger.warning("%s generate_report failed: %s", name, e)
+
     def clean_text(value: Any) -> str:
         return " ".join(str(value or "").split())
 
