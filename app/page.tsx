@@ -2319,95 +2319,6 @@ export default function Dashboard() {
         document.body
       )
     : null;
-  const notificationsCenter = mounted && isNotificationsOpen
-    ? createPortal(
-        <div className="fixed inset-0 z-[930] flex items-start justify-center bg-black/52 p-4 pt-20 backdrop-blur-sm sm:p-6 sm:pt-24" onClick={() => setIsNotificationsOpen(false)}>
-          <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.99 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-[0_32px_88px_-34px_rgba(0,0,0,0.62)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(29,185,84,0.14),rgba(29,185,84,0.06))] px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#1DB954]/35 bg-[#1DB954]/18 text-[#1DB954]">
-                  <Bell size={16} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black tracking-tight">Notifications</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#1DB954]">{unreadNotificationsCount} unread</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { if (session) void fetchNotificationsNow(session); }}
-                  className="rounded-lg border border-[color:var(--border)] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/25 hover:text-primary"
-                >
-                  Refresh
-                </button>
-                <button onClick={() => setIsNotificationsOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-[color:var(--muted-foreground)] transition-all hover:bg-destructive/10 hover:text-destructive">
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-            <div className="max-h-[68vh] overflow-y-auto p-3 custom-scrollbar">
-              {isLoadingNotifications ? (
-                <div className="flex justify-center py-16">
-                  <LoadingSpinner className="h-6 w-6" />
-                </div>
-              ) : latestNotifications.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-5 py-12 text-center text-sm italic text-[color:var(--muted-foreground)]">
-                  No notifications yet.
-                </div>
-              ) : (
-                latestNotifications.map((notification) => {
-                  const isUnread = new Date(notification.created_at).getTime() > notificationsLastSeenAt;
-                  const actorAvatar = notification.actor_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(notification.actor_name || "U")}&background=random`;
-                  return (
-                    <button
-                      key={notification.id}
-                      type="button"
-                      onClick={() => handleNotificationClick(notification)}
-                      className={`mb-2 flex w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all ${
-                        isUnread
-                          ? "border-[#1DB954]/35 bg-[#1DB954]/14 shadow-[0_8px_28px_-18px_rgba(29,185,84,0.6)]"
-                          : "border-transparent bg-[color:var(--muted)]/35 hover:border-[color:var(--border)]"
-                      }`}
-                    >
-                      <div className="relative">
-                        <img src={actorAvatar} className="mt-0.5 h-9 w-9 rounded-xl border border-[color:var(--border)] object-cover" alt="" />
-                        {isUnread && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#1DB954] ring-2 ring-[color:var(--card)]" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="truncate text-sm font-bold tracking-tight">{notification.title}</p>
-                          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
-                            {formatDistanceToNow(parseISO(notification.created_at), { addSuffix: true })}
-                          </span>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-[color:var(--muted-foreground)]">{notification.body}</p>
-                        <div className="mt-1 flex items-center gap-2">
-                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-primary">{notification.actor_name || notification.actor_email || "Teammate"}</p>
-                          {isUnread && (
-                            <span className="rounded-full border border-[#1DB954]/35 bg-[#1DB954]/18 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-[#1DB954]">
-                              New
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </motion.div>
-        </div>,
-        document.body
-      )
-    : null;
 
   return (
     <div className="flex min-h-screen w-full bg-[color:var(--background)] text-[color:var(--foreground)] selection:bg-primary/20 lg:h-screen lg:overflow-hidden">
@@ -2508,22 +2419,114 @@ export default function Dashboard() {
           </div>
           
           <div className="flex items-center gap-2.5">
-            <button
-              onClick={openNotificationsCenter}
-              className={`relative flex h-10 w-10 items-center justify-center rounded-xl border bg-[color:var(--card)] transition-all sm:h-11 sm:w-11 ${
-                unreadNotificationsCount > 0
-                  ? "border-[#1DB954]/40 text-[#1DB954] shadow-[0_0_0_4px_rgba(29,185,84,0.14)] hover:border-[#1DB954]/55 hover:text-[#1DB954]"
-                  : "border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:border-primary/30 hover:text-primary"
-              }`}
-            >
-              <Bell size={16} />
-              {unreadNotificationsCount > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 rounded-full border border-[#0f7e3b] bg-[#1DB954] px-1.5 py-[2px] text-[9px] font-black leading-none text-black shadow-md">
-                  {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
-                </span>
-              )}
-              {unreadNotificationsCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[#1DB954] animate-ping opacity-70" />}
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => isNotificationsOpen ? setIsNotificationsOpen(false) : openNotificationsCenter()}
+                className={`relative flex h-10 w-10 items-center justify-center rounded-xl border bg-[color:var(--card)] transition-all sm:h-11 sm:w-11 ${
+                  unreadNotificationsCount > 0
+                    ? "border-[#1DB954]/40 text-[#1DB954] shadow-[0_0_0_4px_rgba(29,185,84,0.14)] hover:border-[#1DB954]/55 hover:text-[#1DB954]"
+                    : "border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:border-primary/30 hover:text-primary"
+                }`}
+              >
+                <Bell size={16} />
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 rounded-full border border-[#0f7e3b] bg-[#1DB954] px-1.5 py-[2px] text-[9px] font-black leading-none text-black shadow-md">
+                    {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
+                  </span>
+                )}
+                {unreadNotificationsCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[#1DB954] animate-ping opacity-70" />}
+              </button>
+
+              <AnimatePresence>
+                {mounted && isNotificationsOpen && (
+                  <>
+                    <div className="fixed inset-0 z-[930]" onClick={() => setIsNotificationsOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      className="absolute right-0 top-[calc(100%+0.75rem)] z-[940] w-[calc(100vw-2rem)] max-w-sm sm:w-96 overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-[0_32px_88px_-34px_rgba(0,0,0,0.62)] origin-top-right"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between border-b border-[color:var(--border)] bg-[linear-gradient(135deg,rgba(29,185,84,0.14),rgba(29,185,84,0.06))] px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#1DB954]/35 bg-[#1DB954]/18 text-[#1DB954]">
+                            <Bell size={16} />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-black tracking-tight">Notifications</h3>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#1DB954]">{unreadNotificationsCount} unread</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { if (session) void fetchNotificationsNow(session); }}
+                            className="rounded-lg border border-[color:var(--border)] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/25 hover:text-primary"
+                          >
+                            Refresh
+                          </button>
+                          <button onClick={() => setIsNotificationsOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-[color:var(--muted-foreground)] transition-all hover:bg-destructive/10 hover:text-destructive">
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-[60vh] overflow-y-auto p-3 custom-scrollbar">
+                        {isLoadingNotifications ? (
+                          <div className="flex justify-center py-16">
+                            <LoadingSpinner className="h-6 w-6" />
+                          </div>
+                        ) : latestNotifications.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-[color:var(--border)] px-5 py-12 text-center text-sm italic text-[color:var(--muted-foreground)]">
+                            No notifications yet.
+                          </div>
+                        ) : (
+                          latestNotifications.map((notification) => {
+                            const isUnread = new Date(notification.created_at).getTime() > notificationsLastSeenAt;
+                            const actorAvatar = notification.actor_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(notification.actor_name || "U")}&background=random`;
+                            return (
+                              <button
+                                key={notification.id}
+                                type="button"
+                                onClick={() => handleNotificationClick(notification)}
+                                className={`mb-2 flex w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all ${
+                                  isUnread
+                                    ? "border-[#1DB954]/35 bg-[#1DB954]/14 shadow-[0_8px_28px_-18px_rgba(29,185,84,0.6)]"
+                                    : "border-transparent bg-[color:var(--muted)]/35 hover:border-[color:var(--border)]"
+                                }`}
+                              >
+                                <div className="relative">
+                                  <img src={actorAvatar} className="mt-0.5 h-9 w-9 rounded-xl border border-[color:var(--border)] object-cover" alt="" />
+                                  {isUnread && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[#1DB954] ring-2 ring-[color:var(--card)]" />}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="truncate text-sm font-bold tracking-tight">{notification.title}</p>
+                                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+                                      {formatDistanceToNow(parseISO(notification.created_at), { addSuffix: true })}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-[color:var(--muted-foreground)]">{notification.body}</p>
+                                  <div className="mt-1 flex items-center gap-2">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-primary">{notification.actor_name || notification.actor_email || "Teammate"}</p>
+                                    {isUnread && (
+                                      <span className="rounded-full border border-[#1DB954]/35 bg-[#1DB954]/18 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-[#1DB954]">
+                                        New
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
             <button
               onClick={() => setIsCommandPaletteOpen(true)}
               className="flex h-10 items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-xs font-black uppercase tracking-[0.12em] text-[color:var(--muted-foreground)] transition-all hover:border-primary/30 hover:text-primary sm:h-11 sm:px-4"
@@ -3586,7 +3589,6 @@ export default function Dashboard() {
         </div>
       </main>
       {commandPalette}
-      {notificationsCenter}
       {postViewer}
       {attachmentViewer}
     </div>
