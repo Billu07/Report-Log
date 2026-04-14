@@ -27,7 +27,13 @@ logger = logging.getLogger("autolinium-api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-CEO_EMAIL = os.getenv("CEO_EMAIL", "").lower()
+def parse_email_list(raw_value: str) -> set[str]:
+    return {value.strip().lower() for value in (raw_value or "").split(",") if value.strip()}
+
+CEO_EMAILS = parse_email_list(os.getenv("CEO_EMAILS", ""))
+legacy_ceo_email = (os.getenv("CEO_EMAIL", "") or "").strip().lower()
+if legacy_ceo_email:
+    CEO_EMAILS.add(legacy_ceo_email)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
@@ -547,7 +553,8 @@ async def update_profile_me(update: ProfileUpdate, user: Any = Depends(get_curre
 @app.get("/api/backend/reports", response_model=list[DailyReportRecord])
 async def get_all_reports(user: Any = Depends(get_current_user)):
     query = supabase.table("daily_reports").select("*")
-    if user.email.lower() != CEO_EMAIL:
+    user_email = (user.email or "").lower()
+    if user_email not in CEO_EMAILS:
         query = query.eq("author_email", user.email)
     resp = await run_in_threadpool(query.order("report_date", desc=True).execute)
     return [DailyReportRecord(**r) for r in resp.data or []]

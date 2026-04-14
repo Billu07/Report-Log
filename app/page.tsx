@@ -167,6 +167,14 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/backend";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const CEO_EMAIL = process.env.NEXT_PUBLIC_CEO_EMAIL?.toLowerCase() ?? "";
+const CEO_EMAILS = new Set(
+  [
+    ...(process.env.NEXT_PUBLIC_CEO_EMAILS ?? "").split(","),
+    CEO_EMAIL,
+  ]
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -1404,7 +1412,7 @@ export default function Dashboard() {
     return () => { isCancelled = true; };
   }, [session]);
 
-  const isCEO = session?.user?.email?.toLowerCase() === CEO_EMAIL;
+  const isCEO = CEO_EMAILS.has((session?.user?.email || "").toLowerCase());
   const commandActions: CommandPaletteAction[] = [
     ...(isCEO
       ? [{

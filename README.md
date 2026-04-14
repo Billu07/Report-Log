@@ -52,6 +52,7 @@ A full-stack reporting workflow that turns raw work notes and optional field ima
    - `GROQ_API_KEY`
    - `HUGGINGFACE_API_KEY`
    - `FRONTEND_ORIGIN`
+   - `CEO_EMAIL` (single email) or `CEO_EMAILS` (comma-separated list)
 
 ### Run backend locally
 
@@ -73,6 +74,7 @@ GET http://127.0.0.1:8000/health
 
 1. Copy `.env.local.example` to `.env.local`.
 2. Point `NEXT_PUBLIC_API_BASE_URL` to your backend URL.
+3. Set `NEXT_PUBLIC_CEO_EMAIL` (single) or `NEXT_PUBLIC_CEO_EMAILS` (comma-separated list) for CEO view access.
 
 ### Run frontend locally
 
@@ -130,4 +132,3 @@ After the frontend domain is assigned, update the backend's `FRONTEND_ORIGIN` to
 4. Deploy frontend
 5. Update backend `FRONTEND_ORIGIN` to the final frontend URL
 6. Re-test report submission and calendar rendering
-
