@@ -36,8 +36,8 @@ if legacy_ceo_email:
     CEO_EMAILS.add(legacy_ceo_email)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
-GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-pro")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.3-70b-versatile")
@@ -330,30 +330,54 @@ def build_optimize_prompt(updates: list[dict[str, Any]], style: str) -> str:
         "- Keep completion_percent unchanged when provided.\n"
         "- Keep project_name unchanged unless grammar fixes are needed.\n"
         "- Keep image_url exactly as provided.\n"
-        "- Return strict JSON array only, no markdown fences, with objects in this shape:\n"
-        "  {\"project_name\": string, \"work_notes\": string, \"next_steps\": string|null, \"blockers\": string|null, \"image_url\": string|null, \"completion_percent\": number|null}\n\n"
+        "- Fix grammar, punctuation, and readability only.\n"
+        "- Return strict JSON only (no markdown fences) in this shape:\n"
+        "  {\"updates\": [{\"project_name\": string, \"work_notes\": string, \"next_steps\": string|null, \"blockers\": string|null, \"image_url\": string|null, \"completion_percent\": number|null}]}\n\n"
         f"Input updates JSON:\n{serialized}"
     )
 
-def extract_json_array_block(text: str) -> Optional[list[Any]]:
+def extract_optimized_updates_payload(text: str) -> Optional[list[Any]]:
     if not text:
         return None
 
-    code_block_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", text, flags=re.IGNORECASE)
-    candidate = code_block_match.group(1) if code_block_match else text
+    candidates: list[str] = [text.strip()]
+    for code_block in re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE):
+        candidates.append(code_block.strip())
 
-    first_idx = candidate.find("[")
-    last_idx = candidate.rfind("]")
-    if first_idx == -1 or last_idx == -1 or last_idx <= first_idx:
-        return None
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict) and isinstance(parsed.get("updates"), list):
+                return parsed["updates"]
+        except Exception:
+            pass
 
-    raw_json = candidate[first_idx:last_idx + 1]
-    try:
-        parsed = json.loads(raw_json)
-        if isinstance(parsed, list):
-            return parsed
-    except Exception:
-        return None
+    first_obj = text.find("{")
+    last_obj = text.rfind("}")
+    if first_obj != -1 and last_obj != -1 and last_obj > first_obj:
+        raw_obj = text[first_obj:last_obj + 1]
+        try:
+            parsed_obj = json.loads(raw_obj)
+            if isinstance(parsed_obj, dict) and isinstance(parsed_obj.get("updates"), list):
+                return parsed_obj["updates"]
+        except Exception:
+            pass
+
+    first_arr = text.find("[")
+    last_arr = text.rfind("]")
+    if first_arr != -1 and last_arr != -1 and last_arr > first_arr:
+        raw_arr = text[first_arr:last_arr + 1]
+        try:
+            parsed_arr = json.loads(raw_arr)
+            if isinstance(parsed_arr, list):
+                return parsed_arr
+        except Exception:
+            pass
+
     return None
 
 def normalize_optimized_updates(
@@ -459,7 +483,7 @@ async def try_gemini_optimize(updates: list[dict[str, Any]], style: str) -> list
                 contents=[prompt],
                 generation_config={"temperature": 0.2},
             )
-            candidate = extract_json_array_block(response.text or "")
+            candidate = extract_optimized_updates_payload(response.text or "")
             if candidate is not None:
                 return normalize_optimized_updates(updates, candidate)
         except Exception as e:
@@ -481,7 +505,7 @@ async def try_groq_optimize(updates: list[dict[str, Any]], style: str) -> list[d
                 temperature=0.2,
             )
             content = completion.choices[0].message.content or ""
-            candidate = extract_json_array_block(content)
+            candidate = extract_optimized_updates_payload(content)
             if candidate is not None:
                 return normalize_optimized_updates(updates, candidate)
         except Exception as e:
@@ -489,6 +513,15 @@ async def try_groq_optimize(updates: list[dict[str, Any]], style: str) -> list[d
     raise RuntimeError("All Groq optimize models failed")
 
 def fallback_optimize_updates(updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def polish_fallback_text(value: Any) -> str:
+        text = " ".join(str(value or "").split()).strip()
+        if not text:
+            return ""
+        text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+        if text[-1] not in ".!?":
+            text = f"{text}."
+        return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+
     def normalize_completion_percent(value: Any) -> Optional[int]:
         if value in (None, "") or isinstance(value, bool):
             return None
@@ -500,9 +533,9 @@ def fallback_optimize_updates(updates: list[dict[str, Any]]) -> list[dict[str, A
 
     fallback: list[dict[str, Any]] = []
     for update in updates:
-        work_notes = " ".join(str(update.get("work_notes") or "").split())
-        next_steps = " ".join(str(update.get("next_steps") or "").split()) if update.get("next_steps") else None
-        blockers = " ".join(str(update.get("blockers") or "").split()) if update.get("blockers") else None
+        work_notes = polish_fallback_text(update.get("work_notes"))
+        next_steps = polish_fallback_text(update.get("next_steps")) if update.get("next_steps") else None
+        blockers = polish_fallback_text(update.get("blockers")) if update.get("blockers") else None
         fallback.append(
             {
                 "project_name": str(update.get("project_name") or "").strip(),

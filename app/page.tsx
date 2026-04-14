@@ -1628,8 +1628,13 @@ export default function Dashboard() {
         });
       }
 
+      const providerTrace = submitResult?.provider || "unknown";
       resetComposer();
-      notify("success", "Briefing generated and saved.");
+      if (providerTrace.includes("fallback")) {
+        notify("warning", `Briefing saved with fallback formatting (${providerTrace}).`);
+      } else {
+        notify("success", `Briefing generated via ${providerTrace}.`);
+      }
 
       // Keep modal responsiveness high; refresh list in the background.
       void fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session.access_token)
