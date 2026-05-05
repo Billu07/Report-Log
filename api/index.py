@@ -5,7 +5,7 @@ import json
 import re
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 import google.generativeai as genai
@@ -163,6 +163,36 @@ class NotificationRecord(BaseModel):
     report_id: Optional[str] = None
     title: str
     body: str
+
+class TaskRecord(BaseModel):
+    id: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"
+    status: str = "todo"
+    assigned_to_email: str
+    assigned_to_name: Optional[str] = None
+    assigned_to_avatar: Optional[str] = None
+    assigned_by_email: str
+    assigned_by_name: Optional[str] = None
+    assigned_by_avatar: Optional[str] = None
+    due_date: Optional[date] = None
+    submission_note: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class CreateTaskRequest(BaseModel):
+    title: str = Field(min_length=3, max_length=180)
+    description: Optional[str] = Field(default=None, max_length=3000)
+    assigned_to_email: str
+    due_date: Optional[date] = None
+    priority: Literal["low", "medium", "high", "urgent"] = "medium"
+
+class UpdateTaskStatusRequest(BaseModel):
+    status: Literal["todo", "in_progress", "submitted", "done"]
+    submission_note: Optional[str] = Field(default=None, max_length=3000)
 
 # --- AUTH DEPENDENCY ---
 
@@ -583,6 +613,63 @@ def contains_mention(text: str, mention_tokens: list[str]) -> bool:
     content = (text or "").lower()
     return any(token in content for token in mention_tokens)
 
+def is_ceo_user(email: Optional[str]) -> bool:
+    return (email or "").strip().lower() in CEO_EMAILS
+
+def normalize_task_status(value: Any) -> str:
+    status = str(value or "").strip().lower()
+    return status if status in {"todo", "in_progress", "submitted", "done"} else "todo"
+
+def normalize_task_priority(value: Any) -> str:
+    priority = str(value or "").strip().lower()
+    return priority if priority in {"low", "medium", "high", "urgent"} else "medium"
+
+def trim_optional_text(value: Any) -> Optional[str]:
+    text = " ".join(str(value or "").split()).strip()
+    return text or None
+
+async def hydrate_tasks(task_rows: list[dict[str, Any]]) -> list[TaskRecord]:
+    if not task_rows:
+        return []
+
+    emails: set[str] = set()
+    for task in task_rows:
+        assigned_to = (task.get("assigned_to_email") or "").strip().lower()
+        assigned_by = (task.get("assigned_by_email") or "").strip().lower()
+        if assigned_to:
+            emails.add(assigned_to)
+        if assigned_by:
+            emails.add(assigned_by)
+
+    profiles_map: dict[str, dict[str, Any]] = {}
+    if emails:
+        profiles_resp = await run_in_threadpool(
+            supabase.table("profiles").select("*").in_("user_email", list(emails)).execute
+        )
+        profiles_map = {str(p.get("user_email") or "").strip().lower(): p for p in profiles_resp.data or []}
+
+    hydrated: list[TaskRecord] = []
+    for row in task_rows:
+        assigned_to_email = (row.get("assigned_to_email") or "").strip().lower()
+        assigned_by_email = (row.get("assigned_by_email") or "").strip().lower()
+        assigned_to_profile = profiles_map.get(assigned_to_email, {})
+        assigned_by_profile = profiles_map.get(assigned_by_email, {})
+
+        payload = {
+            **row,
+            "assigned_to_email": assigned_to_email,
+            "assigned_by_email": assigned_by_email,
+            "status": normalize_task_status(row.get("status")),
+            "priority": normalize_task_priority(row.get("priority")),
+            "assigned_to_name": assigned_to_profile.get("full_name") or assigned_to_email,
+            "assigned_to_avatar": assigned_to_profile.get("avatar_url"),
+            "assigned_by_name": assigned_by_profile.get("full_name") or assigned_by_email,
+            "assigned_by_avatar": assigned_by_profile.get("avatar_url"),
+        }
+        hydrated.append(TaskRecord(**payload))
+
+    return hydrated
+
 # --- ROUTES ---
 
 @app.get("/api/backend/health")
@@ -675,6 +762,110 @@ async def optimize_report_updates(request: OptimizeUpdatesRequest, user: Any = D
         preview=build_preview_line(refined_updates),
     )
 
+@app.get("/api/backend/tasks", response_model=list[TaskRecord])
+async def get_tasks(user: Any = Depends(get_current_user)):
+    user_email = (user.email or "").strip().lower()
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Email not found in token")
+
+    try:
+        query = supabase.table("tasks").select("*")
+        if not is_ceo_user(user_email):
+            query = query.eq("assigned_to_email", user_email)
+        resp = await run_in_threadpool(query.order("created_at", desc=True).execute)
+        return await hydrate_tasks(resp.data or [])
+    except Exception as exc:
+        message = str(exc)
+        if "tasks" in message.lower() and ("does not exist" in message.lower() or "relation" in message.lower()):
+            raise HTTPException(status_code=500, detail="Tasks table missing. Apply supabase/init.sql migration.")
+        raise HTTPException(status_code=500, detail=message)
+
+@app.post("/api/backend/tasks", response_model=TaskRecord)
+async def create_task(request: CreateTaskRequest, user: Any = Depends(get_current_user)):
+    user_email = (user.email or "").strip().lower()
+    if not is_ceo_user(user_email):
+        raise HTTPException(status_code=403, detail="Only CEO can assign tasks")
+
+    assigned_to_email = (request.assigned_to_email or "").strip().lower()
+    if not assigned_to_email:
+        raise HTTPException(status_code=400, detail="Assignee email is required")
+
+    assignee_profile_resp = await run_in_threadpool(
+        supabase.table("profiles").select("user_email").ilike("user_email", assigned_to_email).execute
+    )
+    if not assignee_profile_resp.data:
+        raise HTTPException(status_code=404, detail="Assignee profile not found")
+
+    payload = {
+        "title": " ".join(request.title.split()).strip(),
+        "description": trim_optional_text(request.description),
+        "priority": normalize_task_priority(request.priority),
+        "status": "todo",
+        "assigned_to_email": assigned_to_email,
+        "assigned_by_email": user_email,
+        "due_date": request.due_date.isoformat() if request.due_date else None,
+        "submission_note": None,
+        "submitted_at": None,
+        "completed_at": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        created_resp = await run_in_threadpool(supabase.table("tasks").insert(payload).execute)
+        if not created_resp.data:
+            raise HTTPException(status_code=500, detail="Unable to create task")
+        hydrated = await hydrate_tasks(created_resp.data)
+        return hydrated[0]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        message = str(exc)
+        if "tasks" in message.lower() and ("does not exist" in message.lower() or "relation" in message.lower()):
+            raise HTTPException(status_code=500, detail="Tasks table missing. Apply supabase/init.sql migration.")
+        raise HTTPException(status_code=500, detail=message)
+
+@app.put("/api/backend/tasks/{task_id}/status", response_model=TaskRecord)
+async def update_task_status(task_id: str, request: UpdateTaskStatusRequest, user: Any = Depends(get_current_user)):
+    user_email = (user.email or "").strip().lower()
+    is_ceo = is_ceo_user(user_email)
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Email not found in token")
+
+    task_resp = await run_in_threadpool(supabase.table("tasks").select("*").eq("id", task_id).limit(1).execute)
+    if not task_resp.data:
+        raise HTTPException(status_code=404, detail="Task not found")
+    current_task = task_resp.data[0]
+    assignee_email = (current_task.get("assigned_to_email") or "").strip().lower()
+
+    if not is_ceo and user_email != assignee_email:
+        raise HTTPException(status_code=403, detail="Not allowed to update this task")
+    if not is_ceo and request.status == "done":
+        raise HTTPException(status_code=403, detail="Only CEO can mark task as done")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload: dict[str, Any] = {
+        "status": normalize_task_status(request.status),
+        "updated_at": now_iso,
+    }
+
+    if request.status == "submitted":
+        payload["submitted_at"] = now_iso
+    elif current_task.get("submitted_at") and request.status in {"todo", "in_progress"}:
+        payload["submitted_at"] = None
+
+    if request.status == "done":
+        payload["completed_at"] = now_iso
+    elif current_task.get("completed_at") and request.status != "done":
+        payload["completed_at"] = None
+
+    if request.submission_note is not None:
+        payload["submission_note"] = trim_optional_text(request.submission_note)
+
+    updated_resp = await run_in_threadpool(supabase.table("tasks").update(payload).eq("id", task_id).execute)
+    if not updated_resp.data:
+        raise HTTPException(status_code=500, detail="Unable to update task")
+    hydrated = await hydrate_tasks(updated_resp.data)
+    return hydrated[0]
+
 @app.get("/api/backend/notifications", response_model=list[NotificationRecord])
 async def get_notifications(user: Any = Depends(get_current_user)):
     user_email = (user.email or "").lower()
@@ -718,6 +909,13 @@ async def get_notifications(user: Any = Depends(get_current_user)):
         supabase.table("daily_reports").select("*").order("created_at", desc=True).limit(100).execute
     )
     reports = reports_resp.data or []
+    try:
+        tasks_resp = await run_in_threadpool(
+            supabase.table("tasks").select("*").order("created_at", desc=True).limit(240).execute
+        )
+        tasks = tasks_resp.data or []
+    except Exception:
+        tasks = []
 
     actor_emails = set()
     for p in posts:
@@ -732,6 +930,11 @@ async def get_notifications(user: Any = Depends(get_current_user)):
     for rep in reports:
         if rep.get("author_email"):
             actor_emails.add(rep["author_email"])
+    for task in tasks:
+        if task.get("assigned_by_email"):
+            actor_emails.add(task["assigned_by_email"])
+        if task.get("assigned_to_email"):
+            actor_emails.add(task["assigned_to_email"])
 
     profiles_map: dict[str, dict[str, Any]] = {}
     if actor_emails:
@@ -904,6 +1107,54 @@ async def get_notifications(user: Any = Depends(get_current_user)):
                 report_id=report.get("id"),
                 title="You Were Mentioned In A Report",
                 body=(report_content[:140] + "...") if len(report_content) > 140 else report_content,
+            )
+
+    for task in tasks:
+        task_id = task.get("id")
+        if not task_id:
+            continue
+        assigned_to_email = (task.get("assigned_to_email") or "").lower()
+        assigned_by_email = (task.get("assigned_by_email") or "").lower()
+        task_title = str(task.get("title") or "New Task")
+        task_status = normalize_task_status(task.get("status"))
+        task_created = parse_datetime_value(task.get("created_at"))
+        task_submitted = parse_datetime_value(task.get("submitted_at")) if task.get("submitted_at") else None
+        task_completed = parse_datetime_value(task.get("completed_at")) if task.get("completed_at") else None
+
+        if assigned_to_email == user_email and assigned_by_email and assigned_by_email != user_email:
+            append_notification(
+                kind="task_assigned",
+                created_at=task_created,
+                actor_email=assigned_by_email,
+                post_id=None,
+                comment_id=None,
+                report_id=None,
+                title="Task Assigned To You",
+                body=task_title,
+            )
+
+        if is_ceo_user(user_email) and task_status == "submitted" and assigned_to_email and assigned_to_email != user_email and task_submitted:
+            append_notification(
+                kind="task_submitted",
+                created_at=task_submitted,
+                actor_email=assigned_to_email,
+                post_id=None,
+                comment_id=None,
+                report_id=None,
+                title="Task Submitted For Review",
+                body=task_title,
+            )
+
+        if assigned_to_email == user_email and task_status == "done" and assigned_by_email and task_completed:
+            append_notification(
+                kind="task_done",
+                created_at=task_completed,
+                actor_email=assigned_by_email,
+                post_id=None,
+                comment_id=None,
+                report_id=None,
+                title="Task Marked Completed",
+                body=task_title,
             )
 
     notifications.sort(key=lambda n: n.created_at, reverse=True)

@@ -58,3 +58,28 @@ create table if not exists public.reactions (
   )
 );
 
+-- Task System
+
+create table if not exists public.tasks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  priority text not null default 'medium',
+  status text not null default 'todo',
+  assigned_to_email text not null references public.profiles(user_email),
+  assigned_by_email text not null references public.profiles(user_email),
+  due_date date,
+  submission_note text,
+  submitted_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (priority in ('low', 'medium', 'high', 'urgent')),
+  check (status in ('todo', 'in_progress', 'submitted', 'done'))
+);
+
+create index if not exists tasks_assigned_to_email_idx
+  on public.tasks (assigned_to_email, status, due_date);
+
+create index if not exists tasks_created_at_idx
+  on public.tasks (created_at desc);

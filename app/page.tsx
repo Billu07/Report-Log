@@ -164,6 +164,29 @@ type NotificationItem = {
   body: string;
 };
 
+type TaskStatus = "todo" | "in_progress" | "submitted" | "done";
+type TaskPriority = "low" | "medium" | "high" | "urgent";
+
+type TaskRecord = {
+  id: string;
+  title: string;
+  description?: string | null;
+  priority: TaskPriority;
+  status: TaskStatus;
+  assigned_to_email: string;
+  assigned_to_name?: string | null;
+  assigned_to_avatar?: string | null;
+  assigned_by_email: string;
+  assigned_by_name?: string | null;
+  assigned_by_avatar?: string | null;
+  due_date?: string | null;
+  submission_note?: string | null;
+  submitted_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/backend";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -395,6 +418,34 @@ async function fetchWithAuth(url: string, options: RequestInit = {}, token?: str
     throw new Error(`Request failed: ${response.status}`);
   }
   return response.json();
+}
+
+function taskStatusLabel(status: TaskStatus) {
+  if (status === "in_progress") return "In Progress";
+  if (status === "submitted") return "Submitted";
+  if (status === "done") return "Completed";
+  return "To Do";
+}
+
+function taskPriorityLabel(priority: TaskPriority) {
+  if (priority === "urgent") return "Urgent";
+  if (priority === "high") return "High";
+  if (priority === "low") return "Low";
+  return "Medium";
+}
+
+function taskStatusClass(status: TaskStatus) {
+  if (status === "done") return "border-emerald-500/35 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (status === "submitted") return "border-amber-500/35 bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  if (status === "in_progress") return "border-sky-500/35 bg-sky-500/15 text-sky-700 dark:text-sky-300";
+  return "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300";
+}
+
+function taskPriorityClass(priority: TaskPriority) {
+  if (priority === "urgent") return "border-red-500/35 bg-red-500/15 text-red-700 dark:text-red-300";
+  if (priority === "high") return "border-orange-500/35 bg-orange-500/15 text-orange-700 dark:text-orange-300";
+  if (priority === "low") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  return "border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300";
 }
 
 // --- UI COMPONENTS ---
@@ -687,11 +738,12 @@ export default function Dashboard() {
   
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
+  const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [profiles, setAllProfiles] = useState<ProfileRecord[]>([]);
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  const [activeTab, setActiveTab] = useState<"dashboard" | "reports" | "feed" | "profile" | "settings">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "reports" | "tasks" | "feed" | "profile" | "settings">("dashboard");
   const [reportsViewMode, setReportsViewMode] = useState<"list" | "calendar">("list");
   const [visibleMonth, setVisibleMonth] = useState<Date>(new Date());
 
@@ -725,6 +777,15 @@ export default function Dashboard() {
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskAssigneeEmail, setTaskAssigneeEmail] = useState("");
+  const [taskDueDate, setTaskDueDate] = useState("");
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
+  const [taskFilterStatus, setTaskFilterStatus] = useState<"all" | TaskStatus>("all");
+  const [taskSubmissionDrafts, setTaskSubmissionDrafts] = useState<Record<string, string>>({});
   
   // Profile State
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -1038,7 +1099,7 @@ export default function Dashboard() {
     setIsComposing(false);
   }
 
-  function openWorkspaceTab(tab: "dashboard" | "reports" | "feed" | "profile" | "settings") {
+  function openWorkspaceTab(tab: "dashboard" | "reports" | "tasks" | "feed" | "profile" | "settings") {
     setActiveTab(tab);
     setSelectedReport(null);
     setSelectedAuthor(null);
@@ -1235,6 +1296,88 @@ export default function Dashboard() {
     }
   }
 
+  async function fetchTasksNow(currentSession: Session) {
+    try {
+      const data = await fetchWithAuth(`${API_BASE_URL}/tasks`, { cache: "no-store" }, currentSession.access_token);
+      setTasks(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setTasks([]);
+    }
+  }
+
+  async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session || !isCEO) return;
+    if (!taskTitle.trim() || !taskAssigneeEmail.trim()) {
+      notify("warning", "Task title and assignee are required.");
+      return;
+    }
+
+    setIsCreatingTask(true);
+    try {
+      const payload = {
+        title: taskTitle.trim(),
+        description: taskDescription.trim() || null,
+        assigned_to_email: taskAssigneeEmail.trim().toLowerCase(),
+        due_date: taskDueDate || null,
+        priority: taskPriority,
+      };
+      const created = await fetchWithAuth(
+        `${API_BASE_URL}/tasks`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+        session.access_token
+      ) as TaskRecord;
+      setTasks((prev) => [created, ...prev.filter((task) => task.id !== created.id)]);
+      setTaskTitle("");
+      setTaskDescription("");
+      setTaskAssigneeEmail("");
+      setTaskDueDate("");
+      setTaskPriority("medium");
+      notify("success", "Task assigned successfully.");
+    } catch (err) {
+      console.error(err);
+      notify("error", getErrorMessage(err, "Unable to assign task."));
+    } finally {
+      setIsCreatingTask(false);
+    }
+  }
+
+  async function handleTaskStatusUpdate(task: TaskRecord, nextStatus: TaskStatus) {
+    if (!session) return;
+    setUpdatingTaskId(task.id);
+    try {
+      const draftSubmission = (taskSubmissionDrafts[task.id] || "").trim();
+      const payload = {
+        status: nextStatus,
+        submission_note: draftSubmission || task.submission_note || null,
+      };
+      const updated = await fetchWithAuth(
+        `${API_BASE_URL}/tasks/${task.id}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+        session.access_token
+      ) as TaskRecord;
+      setTasks((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      if (nextStatus === "submitted" || nextStatus === "done") {
+        setTaskSubmissionDrafts((prev) => ({ ...prev, [task.id]: "" }));
+      }
+      notify("success", `Task moved to ${taskStatusLabel(nextStatus)}.`);
+    } catch (err) {
+      console.error(err);
+      notify("error", getErrorMessage(err, "Unable to update task status."));
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  }
+
   // Load Session
   useEffect(() => {
     setMounted(true);
@@ -1281,6 +1424,13 @@ export default function Dashboard() {
     setNotificationsLastSeenAt(0);
     setIsNotificationsOpen(false);
     setFocusedPostId(null);
+    setTaskSubmissionDrafts({});
+    setTaskFilterStatus("all");
+    setTaskTitle("");
+    setTaskDescription("");
+    setTaskAssigneeEmail("");
+    setTaskDueDate("");
+    setTaskPriority("medium");
   }, [session?.user?.email]);
 
   useEffect(() => {
@@ -1363,8 +1513,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (!session) return;
     void fetchNotificationsNow(session);
+    void fetchTasksNow(session);
     const intervalId = window.setInterval(() => {
       void fetchNotificationsNow(session);
+      void fetchTasksNow(session);
     }, 45000);
     return () => window.clearInterval(intervalId);
   }, [session]);
@@ -1380,6 +1532,7 @@ export default function Dashboard() {
     // IMMEDIATE RESET: Clear all user-specific state when session changes
     setReports([]);
     setPosts([]);
+    setTasks([]);
     setProfile(null);
     setAllProfiles([]);
     setSelectedReport(null);
@@ -1394,14 +1547,16 @@ export default function Dashboard() {
     async function loadAll() {
       setIsLoading(true);
       try {
-        const [repData, postData, profData] = await Promise.all([
+        const [repData, postData, taskData, profData] = await Promise.all([
           fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session!.access_token),
           fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session!.access_token),
+          fetchWithAuth(`${API_BASE_URL}/tasks`, { cache: "no-store" }, session!.access_token),
           fetchWithAuth(`${API_BASE_URL}/profiles/me`, {}, session!.access_token)
         ]);
         if (!isCancelled) {
           setReports(repData.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
           setPosts(postData);
+          setTasks(Array.isArray(taskData) ? taskData : []);
           setProfile(profData);
         }
         void fetchWithAuth(`${API_BASE_URL}/profiles/all`, {}, session!.access_token)
@@ -1435,6 +1590,13 @@ export default function Dashboard() {
       subtitle: "Open briefing logs",
       keywords: "reports logs briefings",
       run: () => openWorkspaceTab("reports"),
+    },
+    {
+      id: "go-tasks",
+      title: "Go To Tasks",
+      subtitle: "Open task center",
+      keywords: "tasks assignments submit work",
+      run: () => openWorkspaceTab("tasks"),
     },
     {
       id: "go-feed",
@@ -1965,6 +2127,29 @@ export default function Dashboard() {
     };
   });
   const dashboardMembers = dashboardProfileMembers.length > 0 ? dashboardProfileMembers : dashboardFallbackMembers;
+  const currentUserEmail = (session.user.email || "").toLowerCase();
+  const assignableMembers = profiles
+    .filter((member) => (member.user_email || "").toLowerCase() !== currentUserEmail)
+    .sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""));
+  const taskPool = [...tasks]
+    .filter((task) => taskFilterStatus === "all" || task.status === taskFilterStatus)
+    .sort((a, b) => {
+      const doneDelta = (a.status === "done" ? 1 : 0) - (b.status === "done" ? 1 : 0);
+      if (doneDelta !== 0) return doneDelta;
+      const aDue = a.due_date ? +new Date(a.due_date) : Number.MAX_SAFE_INTEGER;
+      const bDue = b.due_date ? +new Date(b.due_date) : Number.MAX_SAFE_INTEGER;
+      if (aDue !== bDue) return aDue - bDue;
+      return +new Date(b.created_at || 0) - +new Date(a.created_at || 0);
+    });
+  const openTaskCount = tasks.filter((task) => task.status !== "done").length;
+  const submittedTaskCount = tasks.filter((task) => task.status === "submitted").length;
+  const completedTaskCount = tasks.filter((task) => task.status === "done").length;
+  const taskGroupsByAssignee = taskPool.reduce<Record<string, TaskRecord[]>>((acc, task) => {
+    const key = task.assigned_to_email || "unknown@autolinium.local";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(task);
+    return acc;
+  }, {});
   const winsWallPosts = [...posts]
     .map((post) => ({ post, score: scorePostImpact(post) }))
     .filter(({ post, score }) => postHasWinSignal(post) || score >= 10)
@@ -2204,19 +2389,29 @@ export default function Dashboard() {
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-2">
-                          {publicReportCapsules.slice(0, 24).map((report) => (
-                            <button
-                              key={report.id}
-                              type="button"
-                              onClick={() => {
-                                setViewingProfile(null);
-                                setSelectedReport(report);
-                              }}
-                              className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[color:var(--foreground)] transition-all hover:border-primary/25 hover:text-primary dark:border-[#3a5885] dark:bg-[#112640]"
-                            >
-                              {format(parseISO(report.report_date), "MMM d")}
-                            </button>
-                          ))}
+                          {publicReportCapsules.slice(0, 24).map((report) => {
+                            const canClick = isCEO || viewingProfile.user_email === session?.user?.email;
+                            return (
+                              <button
+                                key={report.id}
+                                type="button"
+                                disabled={!canClick}
+                                onClick={() => {
+                                  if (canClick) {
+                                    setViewingProfile(null);
+                                    setSelectedReport(report);
+                                  }
+                                }}
+                                className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] transition-all ${
+                                  canClick 
+                                    ? "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--foreground)] hover:border-primary/25 hover:text-primary dark:border-[#3a5885] dark:bg-[#112640]" 
+                                    : "cursor-default border-[color:var(--border)]/50 bg-[color:var(--muted)]/30 text-[color:var(--muted-foreground)] opacity-70"
+                                }`}
+                              >
+                                {format(parseISO(report.report_date), "MMM d")}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -2406,6 +2601,9 @@ export default function Dashboard() {
           <button onClick={() => { setActiveTab("reports"); setSelectedReport(null); setSelectedAuthor(null); setSelectedAuthorEmail(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "reports" && !selectedAuthor ? "active" : ""}`}>
             <FileText size={18} /> {isCEO ? "Execution Logs" : "My Briefings"}
           </button>
+          <button onClick={() => { setActiveTab("tasks"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "tasks" ? "active" : ""}`}>
+            <CheckCircle2 size={18} /> Task Center
+          </button>
           <button onClick={() => { setActiveTab("feed"); setSelectedReport(null); setIsComposing(false); }} className={`sidebar-nav-item h-11 ${activeTab === "feed" ? "active" : ""}`}>
             <Activity size={18} /> Company Feed
           </button>
@@ -2447,7 +2645,7 @@ export default function Dashboard() {
             )}
             <img src="/logo.png" alt="" className="h-8 w-8 rounded-lg object-contain lg:hidden" />
             <h2 className="font-heading text-xl font-bold tracking-tight text-[color:var(--foreground)] sm:text-2xl">
-              {selectedReport ? "Briefing Details" : isComposing ? "Log Briefing" : activeTab === "reports" && selectedAuthor ? `${selectedAuthor}'s Execution` : activeTab === "dashboard" ? "Team Overview" : activeTab === "feed" ? "Company Feed" : activeTab}
+              {selectedReport ? "Briefing Details" : isComposing ? "Log Briefing" : activeTab === "reports" && selectedAuthor ? `${selectedAuthor}'s Execution` : activeTab === "dashboard" ? "Team Overview" : activeTab === "feed" ? "Company Feed" : activeTab === "tasks" ? "Task Center" : activeTab}
             </h2>
           </div>
           
@@ -2568,7 +2766,7 @@ export default function Dashboard() {
               <span className="hidden sm:inline">Actions</span>
               <span className="rounded-md border border-[color:var(--border)] px-1.5 py-0.5 text-[9px] tracking-[0.08em] text-[color:var(--muted-foreground)]">Ctrl K</span>
             </button>
-            {!isComposing && !selectedReport && activeTab !== "profile" && activeTab !== "feed" && activeTab !== "settings" && (
+            {!isComposing && !selectedReport && activeTab !== "profile" && activeTab !== "feed" && activeTab !== "settings" && activeTab !== "tasks" && (
               <button onClick={openComposeBriefing} className="button-primary h-10 rounded-xl px-3.5 font-bold tracking-tight shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 sm:h-11 sm:px-6"><Plus size={18} /> <span className="hidden sm:inline">Create Report</span></button>
             )}
           </div>
@@ -2595,6 +2793,12 @@ export default function Dashboard() {
               className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "feed" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
             >
               Feed
+            </button>
+            <button
+              onClick={() => { setActiveTab("tasks"); setSelectedReport(null); setIsComposing(false); }}
+              className={`whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all ${activeTab === "tasks" ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-[color:var(--card)] text-[color:var(--muted-foreground)] border border-[color:var(--border)]"}`}
+            >
+              Tasks
             </button>
             <button
               onClick={() => { setActiveTab("profile"); setSelectedReport(null); setIsComposing(false); }}
@@ -3037,6 +3241,249 @@ export default function Dashboard() {
                     })
                   )}
                 </div>
+              </motion.div>
+            )}
+
+            {/* TASK CENTER */}
+            {!isLoading && activeTab === "tasks" && !isComposing && !selectedReport && (
+              <motion.div key="tasks" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mx-auto flex max-w-6xl flex-col gap-8">
+                <section className="card-elevated rounded-[2rem] border border-primary/10 bg-[color:var(--card)]/95 p-6 shadow-xl shadow-black/5 dark:border-[#2f4a72] dark:bg-[#0f1f36]/92 sm:p-8">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/80">Workstream Control</p>
+                      <h3 className="mt-1 font-heading text-2xl font-extrabold tracking-tight">Task Center</h3>
+                      <p className="mt-2 text-sm text-[color:var(--muted-foreground)]">CEO can assign and review execution. Members update delivery status and submit completion notes.</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 self-start md:self-auto">
+                      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">Open</p>
+                        <p className="mt-1 text-lg font-black text-primary">{openTaskCount}</p>
+                      </div>
+                      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">Review</p>
+                        <p className="mt-1 text-lg font-black text-amber-500">{submittedTaskCount}</p>
+                      </div>
+                      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">Done</p>
+                        <p className="mt-1 text-lg font-black text-emerald-500">{completedTaskCount}</p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {isCEO && (
+                  <section className="card-elevated rounded-[2rem] border border-[color:var(--border)] bg-[color:var(--card)]/92 p-6 dark:border-[#35527c] dark:bg-[#11233e]/92 sm:p-8">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h4 className="font-heading text-xl font-black tracking-tight">Assign New Task</h4>
+                      {isCreatingTask && <LoadingRail label="Assigning" />}
+                    </div>
+                    <form onSubmit={handleCreateTask} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">Task Title</label>
+                        <input
+                          value={taskTitle}
+                          onChange={(event) => setTaskTitle(event.target.value)}
+                          required
+                          placeholder="e.g. Finalize onboarding workflow QA"
+                          className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-semibold outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">Assign To</label>
+                        <select
+                          value={taskAssigneeEmail}
+                          onChange={(event) => setTaskAssigneeEmail(event.target.value)}
+                          required
+                          className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-semibold outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                        >
+                          <option value="">Select teammate</option>
+                          {assignableMembers.map((member) => (
+                            <option key={member.user_email} value={member.user_email}>
+                              {member.full_name} ({member.user_email})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">Priority</label>
+                          <select
+                            value={taskPriority}
+                            onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}
+                            className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-semibold outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                          >
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">Due Date</label>
+                          <input
+                            type="date"
+                            value={taskDueDate}
+                            onChange={(event) => setTaskDueDate(event.target.value)}
+                            className="h-11 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-semibold outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                          />
+                        </div>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">Task Brief</label>
+                        <textarea
+                          value={taskDescription}
+                          onChange={(event) => setTaskDescription(event.target.value)}
+                          placeholder="Expected outcome, acceptance criteria, and important constraints."
+                          className="min-h-[110px] w-full resize-none rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm font-medium outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                        />
+                      </div>
+                      <div className="md:col-span-2 flex justify-end">
+                        <button type="submit" disabled={isCreatingTask} className="button-primary h-11 rounded-xl px-6 text-xs font-black uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-70">
+                          {isCreatingTask ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Assign Task"}
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+                )}
+
+                <section className="flex items-center justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    {(["all", "todo", "in_progress", "submitted", "done"] as Array<"all" | TaskStatus>).map((filterStatus) => (
+                      <button
+                        key={filterStatus}
+                        type="button"
+                        onClick={() => setTaskFilterStatus(filterStatus)}
+                        className={`rounded-full border px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] transition-all ${
+                          taskFilterStatus === filterStatus
+                            ? "border-primary/35 bg-primary/15 text-primary"
+                            : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:border-primary/25 hover:text-primary"
+                        }`}
+                      >
+                        {filterStatus === "all" ? "All" : taskStatusLabel(filterStatus)}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {taskPool.length === 0 ? (
+                  <div className="rounded-[1.75rem] border border-dashed border-[color:var(--border)] px-6 py-14 text-center text-sm font-semibold italic text-[color:var(--muted-foreground)]">
+                    No tasks found for this filter.
+                  </div>
+                ) : isCEO ? (
+                  <div className="grid grid-cols-1 gap-6">
+                    {Object.entries(taskGroupsByAssignee).map(([assigneeEmail, assigneeTasks]) => (
+                      <div key={assigneeEmail} className="rounded-[1.75rem] border border-[color:var(--border)] bg-[color:var(--card)]/90 p-5 dark:border-[#35527c] dark:bg-[#10243f]/92">
+                        <div className="mb-4 flex items-center gap-3">
+                          <img src={assigneeTasks[0]?.assigned_to_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(assigneeTasks[0]?.assigned_to_name || assigneeEmail)}&background=random`} alt="" className="h-10 w-10 rounded-xl border border-[color:var(--border)] object-cover" />
+                          <div>
+                            <p className="text-sm font-black tracking-tight">{assigneeTasks[0]?.assigned_to_name || assigneeEmail}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">{assigneeEmail}</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                          {assigneeTasks.map((task) => (
+                            <article key={task.id} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--muted)]/35 p-4 dark:border-[#3b5a85] dark:bg-[#132a45]">
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <h5 className="text-base font-black tracking-tight">{task.title}</h5>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] ${taskPriorityClass(task.priority)}`}>{taskPriorityLabel(task.priority)}</span>
+                                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] ${taskStatusClass(task.status)}`}>{taskStatusLabel(task.status)}</span>
+                                </div>
+                              </div>
+                              {task.description && <p className="text-sm leading-relaxed text-[color:var(--muted-foreground)]">{task.description}</p>}
+                              <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+                                <span>Assigned by {task.assigned_by_name || task.assigned_by_email}</span>
+                                {task.due_date && <span>Due {format(parseISO(task.due_date), "MMM d, yyyy")}</span>}
+                              </div>
+                              {task.submission_note && (
+                                <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                                  Submission: {task.submission_note}
+                                </p>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {task.status !== "done" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleTaskStatusUpdate(task, "done")}
+                                    disabled={updatingTaskId === task.id}
+                                    className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700 transition-all hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 dark:text-emerald-300"
+                                  >
+                                    {updatingTaskId === task.id ? <LoadingSpinner className="h-3 w-3" tone="light" /> : "Mark Done"}
+                                  </button>
+                                )}
+                                {task.status === "done" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleTaskStatusUpdate(task, "in_progress")}
+                                    disabled={updatingTaskId === task.id}
+                                    className="rounded-lg border border-sky-500/35 bg-sky-500/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700 transition-all hover:bg-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 dark:text-sky-300"
+                                  >
+                                    Reopen
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    {taskPool.map((task) => (
+                      <article key={task.id} className="card-elevated rounded-[1.75rem] border border-[color:var(--border)] bg-[color:var(--card)]/92 p-5 dark:border-[#35527c] dark:bg-[#11243f]/92">
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">Assigned by {task.assigned_by_name || task.assigned_by_email}</p>
+                            <h5 className="mt-1 text-lg font-black tracking-tight">{task.title}</h5>
+                          </div>
+                          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${taskStatusClass(task.status)}`}>{taskStatusLabel(task.status)}</span>
+                        </div>
+                        {task.description && <p className="text-sm leading-relaxed text-[color:var(--muted-foreground)]">{task.description}</p>}
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+                          <span className={`rounded-full border px-2 py-0.5 ${taskPriorityClass(task.priority)}`}>{taskPriorityLabel(task.priority)}</span>
+                          {task.due_date && <span>Due {format(parseISO(task.due_date), "MMM d, yyyy")}</span>}
+                        </div>
+
+                        {(task.status === "in_progress" || task.status === "submitted") && (
+                          <textarea
+                            value={taskSubmissionDrafts[task.id] ?? task.submission_note ?? ""}
+                            onChange={(event) => setTaskSubmissionDrafts((prev) => ({ ...prev, [task.id]: event.target.value }))}
+                            placeholder="Progress update for CEO review..."
+                            className="mt-3 min-h-[86px] w-full resize-none rounded-xl border border-[color:var(--border)] bg-[color:var(--input)] px-3 py-2 text-sm font-medium outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
+                          />
+                        )}
+
+                        {task.submission_note && task.status === "done" && (
+                          <p className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                            Final submission: {task.submission_note}
+                          </p>
+                        )}
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {task.status === "todo" && (
+                            <button type="button" onClick={() => void handleTaskStatusUpdate(task, "in_progress")} disabled={updatingTaskId === task.id} className="rounded-lg border border-sky-500/35 bg-sky-500/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700 transition-all hover:bg-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 dark:text-sky-300">
+                              Start Task
+                            </button>
+                          )}
+                          {task.status === "in_progress" && (
+                            <button type="button" onClick={() => void handleTaskStatusUpdate(task, "submitted")} disabled={updatingTaskId === task.id} className="rounded-lg border border-amber-500/35 bg-amber-500/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-amber-700 transition-all hover:bg-amber-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300">
+                              Submit For Review
+                            </button>
+                          )}
+                          {task.status === "submitted" && (
+                            <button type="button" onClick={() => void handleTaskStatusUpdate(task, "in_progress")} disabled={updatingTaskId === task.id} className="rounded-lg border border-slate-500/30 bg-slate-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-all hover:bg-slate-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-300">
+                              Rework
+                            </button>
+                          )}
+                          {task.status === "done" && (
+                            <span className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">Completed</span>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
 
