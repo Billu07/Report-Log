@@ -137,6 +137,7 @@ type OptimizeUpdatesResponse = {
     next_steps?: string | null;
     blockers?: string | null;
     image_url?: string | null;
+    image_urls?: string[] | null;
     completion_percent?: number | null;
   }>;
 };
@@ -147,6 +148,7 @@ type ReportUpdateEntry = {
   next_steps?: string | null;
   blockers?: string | null;
   image_url?: string | null;
+  image_urls?: string[] | null;
   completion_percent?: number | null;
 };
 
@@ -180,7 +182,9 @@ type TaskRecord = {
   assigned_by_name?: string | null;
   assigned_by_avatar?: string | null;
   due_date?: string | null;
+  assignment_attachments?: string[] | null;
   submission_note?: string | null;
+  submission_attachments?: string[] | null;
   submitted_at?: string | null;
   completed_at?: string | null;
   created_at?: string | null;
@@ -697,8 +701,8 @@ type ProjectUpdateState = {
   nextSteps?: string;
   blockers?: string;
   completionPercent: string;
-  selectedImage: File | null;
-  uploadedImageUrl: string | null;
+  selectedImages: File[];
+  uploadedImageUrls: string[];
 };
 
 type CommandPaletteAction = {
@@ -726,8 +730,8 @@ function createEmptyUpdate(): ProjectUpdateState {
     nextSteps: "",
     blockers: "",
     completionPercent: "",
-    selectedImage: null,
-    uploadedImageUrl: null
+    selectedImages: [],
+    uploadedImageUrls: []
   };
 }
 
@@ -784,8 +788,10 @@ export default function Dashboard() {
   const [taskAssigneeEmail, setTaskAssigneeEmail] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
+  const [taskAssignmentFiles, setTaskAssignmentFiles] = useState<File[]>([]);
   const [taskFilterStatus, setTaskFilterStatus] = useState<"all" | TaskStatus>("all");
   const [taskSubmissionDrafts, setTaskSubmissionDrafts] = useState<Record<string, string>>({});
+  const [taskSubmissionFiles, setTaskSubmissionFiles] = useState<Record<string, File[]>>({});
   
   // Profile State
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -801,6 +807,7 @@ export default function Dashboard() {
   const briefingFormRef = useRef<HTMLFormElement | null>(null);
 
   const { startUpload } = useUploadThing("imageUploader");
+  const { startUpload: startTaskAttachmentUpload } = useUploadThing("taskAttachmentUploader");
 
   const toast = Swal.mixin({
     toast: true,
@@ -852,7 +859,7 @@ export default function Dashboard() {
     if (err instanceof Error && err.message) {
       const msg = err.message;
       if (msg.includes("400")) {
-        return "Upload rejected. Please use JPG/PNG/WebP under 4MB.";
+        return "Upload rejected. Check file type and size limits.";
       }
       return msg;
     }
@@ -906,6 +913,14 @@ export default function Dashboard() {
     return compressed;
   }
 
+  function prepareTaskAttachmentForUpload(file: File, label: string) {
+    const MAX_TASK_ATTACHMENT_BYTES = 16 * 1024 * 1024;
+    if (file.size > MAX_TASK_ATTACHMENT_BYTES) {
+      throw new Error(`${label}: file exceeds 16MB limit.`);
+    }
+    return file;
+  }
+
   function notifyLargeImageSelection(file: File, label: string) {
     if (!file.type.startsWith("image/")) {
       notify("error", `${label}: only image files are allowed.`);
@@ -938,6 +953,11 @@ export default function Dashboard() {
           next_steps: typeof item.next_steps === "string" && item.next_steps.trim() ? item.next_steps : null,
           blockers: typeof item.blockers === "string" && item.blockers.trim() ? item.blockers : null,
           image_url: typeof item.image_url === "string" && item.image_url.trim() ? item.image_url : null,
+          image_urls: Array.isArray(item.image_urls)
+            ? item.image_urls.filter((value: unknown) => typeof value === "string" && value.trim())
+            : typeof item.image_url === "string" && item.image_url.trim()
+              ? [item.image_url]
+              : [],
           completion_percent: normalizeCompletionPercent(item.completion_percent),
         }));
     } catch {
@@ -1136,7 +1156,8 @@ export default function Dashboard() {
           work_notes: update.workNotes.trim(),
           next_steps: update.nextSteps?.trim() || null,
           blockers: update.blockers?.trim() || null,
-          image_url: update.uploadedImageUrl || null,
+          image_urls: update.uploadedImageUrls || [],
+          image_url: update.uploadedImageUrls?.[0] || null,
           completion_percent: normalizeCompletionPercent(update.completionPercent),
         })),
       };
@@ -1316,12 +1337,23 @@ export default function Dashboard() {
 
     setIsCreatingTask(true);
     try {
+      const attachmentUrls: string[] = [];
+      if (taskAssignmentFiles.length > 0) {
+        for (let fileIndex = 0; fileIndex < taskAssignmentFiles.length; fileIndex++) {
+          const originalFile = taskAssignmentFiles[fileIndex];
+          const preparedFile = prepareTaskAttachmentForUpload(originalFile, `Task attachment ${fileIndex + 1}`);
+          const uploadRes = await startTaskAttachmentUpload([preparedFile]);
+          const uploadedUrl = getUploadUrl(uploadRes as UploadResultItem[] | null | undefined);
+          if (uploadedUrl) attachmentUrls.push(uploadedUrl);
+        }
+      }
       const payload = {
         title: taskTitle.trim(),
         description: taskDescription.trim() || null,
         assigned_to_email: taskAssigneeEmail.trim().toLowerCase(),
         due_date: taskDueDate || null,
         priority: taskPriority,
+        attachment_urls: attachmentUrls,
       };
       const created = await fetchWithAuth(
         `${API_BASE_URL}/tasks`,
@@ -1338,6 +1370,7 @@ export default function Dashboard() {
       setTaskAssigneeEmail("");
       setTaskDueDate("");
       setTaskPriority("medium");
+      setTaskAssignmentFiles([]);
       notify("success", "Task assigned successfully.");
     } catch (err) {
       console.error(err);
@@ -1352,9 +1385,20 @@ export default function Dashboard() {
     setUpdatingTaskId(task.id);
     try {
       const draftSubmission = (taskSubmissionDrafts[task.id] || "").trim();
+      const submissionAttachmentUrls = [...(task.submission_attachments || [])];
+      if ((nextStatus === "submitted" || nextStatus === "in_progress") && (taskSubmissionFiles[task.id] || []).length > 0) {
+        const files = taskSubmissionFiles[task.id] || [];
+        for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+          const preparedFile = prepareTaskAttachmentForUpload(files[fileIndex], `Submission attachment ${fileIndex + 1}`);
+          const uploadRes = await startTaskAttachmentUpload([preparedFile]);
+          const uploadedUrl = getUploadUrl(uploadRes as UploadResultItem[] | null | undefined);
+          if (uploadedUrl) submissionAttachmentUrls.push(uploadedUrl);
+        }
+      }
       const payload = {
         status: nextStatus,
         submission_note: draftSubmission || task.submission_note || null,
+        submission_attachment_urls: submissionAttachmentUrls,
       };
       const updated = await fetchWithAuth(
         `${API_BASE_URL}/tasks/${task.id}/status`,
@@ -1368,11 +1412,40 @@ export default function Dashboard() {
       setTasks((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       if (nextStatus === "submitted" || nextStatus === "done") {
         setTaskSubmissionDrafts((prev) => ({ ...prev, [task.id]: "" }));
+        setTaskSubmissionFiles((prev) => ({ ...prev, [task.id]: [] }));
       }
       notify("success", `Task moved to ${taskStatusLabel(nextStatus)}.`);
     } catch (err) {
       console.error(err);
       notify("error", getErrorMessage(err, "Unable to update task status."));
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  }
+
+  async function handleTaskDelete(task: TaskRecord) {
+    if (!session || !isCEO) return;
+    const confirmed = await confirmAction("Delete Task?", `This will permanently remove "${task.title}".`);
+    if (!confirmed) return;
+
+    setUpdatingTaskId(task.id);
+    try {
+      await fetchWithAuth(`${API_BASE_URL}/tasks/${task.id}`, { method: "DELETE" }, session.access_token);
+      setTasks((prev) => prev.filter((item) => item.id !== task.id));
+      setTaskSubmissionDrafts((prev) => {
+        const next = { ...prev };
+        delete next[task.id];
+        return next;
+      });
+      setTaskSubmissionFiles((prev) => {
+        const next = { ...prev };
+        delete next[task.id];
+        return next;
+      });
+      notify("success", "Task deleted.");
+    } catch (err) {
+      console.error(err);
+      notify("error", getErrorMessage(err, "Unable to delete task."));
     } finally {
       setUpdatingTaskId(null);
     }
@@ -1431,6 +1504,8 @@ export default function Dashboard() {
     setTaskAssigneeEmail("");
     setTaskDueDate("");
     setTaskPriority("medium");
+    setTaskAssignmentFiles([]);
+    setTaskSubmissionFiles({});
   }, [session?.user?.email]);
 
   useEffect(() => {
@@ -1547,18 +1622,23 @@ export default function Dashboard() {
     async function loadAll() {
       setIsLoading(true);
       try {
-        const [repData, postData, taskData, profData] = await Promise.all([
+        const [repData, postData, profData] = await Promise.all([
           fetchWithAuth(`${API_BASE_URL}/reports`, { cache: "no-store" }, session!.access_token),
           fetchWithAuth(`${API_BASE_URL}/posts`, { cache: "no-store" }, session!.access_token),
-          fetchWithAuth(`${API_BASE_URL}/tasks`, { cache: "no-store" }, session!.access_token),
           fetchWithAuth(`${API_BASE_URL}/profiles/me`, {}, session!.access_token)
         ]);
         if (!isCancelled) {
           setReports(repData.map((r: any, i: number) => ({ ...r, id: r.id || `temp-${i}`, author_name: r.author_name || "Unknown" })));
           setPosts(postData);
-          setTasks(Array.isArray(taskData) ? taskData : []);
           setProfile(profData);
         }
+        void fetchWithAuth(`${API_BASE_URL}/tasks`, { cache: "no-store" }, session!.access_token)
+          .then((taskData) => {
+            if (!isCancelled) setTasks(Array.isArray(taskData) ? taskData : []);
+          })
+          .catch(() => {
+            if (!isCancelled) setTasks([]);
+          });
         void fetchWithAuth(`${API_BASE_URL}/profiles/all`, {}, session!.access_token)
           .then((allProfs) => {
             if (!isCancelled) setAllProfiles(allProfs ?? []);
@@ -1769,11 +1849,16 @@ export default function Dashboard() {
     try {
       const finalUpdates = updates.map((update) => ({ ...update }));
       for (let i = 0; i < finalUpdates.length; i++) {
-        if (finalUpdates[i].selectedImage) {
-          const preparedFile = await prepareImageForUpload(finalUpdates[i].selectedImage!, `Attachment ${i + 1}`);
-          const uploadRes = await startUpload([preparedFile]);
-          const uploadedUrl = getUploadUrl(uploadRes as UploadResultItem[] | null | undefined);
-          if (uploadedUrl) finalUpdates[i].uploadedImageUrl = uploadedUrl;
+        if (finalUpdates[i].selectedImages.length > 0) {
+          const uploadedImageUrls: string[] = [];
+          for (let imageIndex = 0; imageIndex < finalUpdates[i].selectedImages.length; imageIndex++) {
+            const imageFile = finalUpdates[i].selectedImages[imageIndex];
+            const preparedFile = await prepareImageForUpload(imageFile, `Attachment ${i + 1}.${imageIndex + 1}`);
+            const uploadRes = await startUpload([preparedFile]);
+            const uploadedUrl = getUploadUrl(uploadRes as UploadResultItem[] | null | undefined);
+            if (uploadedUrl) uploadedImageUrls.push(uploadedUrl);
+          }
+          finalUpdates[i].uploadedImageUrls = uploadedImageUrls;
         }
       }
       const payload = {
@@ -1783,7 +1868,8 @@ export default function Dashboard() {
           work_notes: u.workNotes.trim(), 
           next_steps: u.nextSteps?.trim(),
           blockers: u.blockers?.trim(),
-          image_url: u.uploadedImageUrl,
+          image_urls: u.uploadedImageUrls,
+          image_url: u.uploadedImageUrls?.[0] || null,
           completion_percent: normalizeCompletionPercent(u.completionPercent),
         }))
       };
@@ -3337,6 +3423,20 @@ export default function Dashboard() {
                           className="min-h-[110px] w-full resize-none rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm font-medium outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
                         />
                       </div>
+                      <div className="md:col-span-2">
+                        <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em] text-[color:var(--muted-foreground)]">Task Documents (Optional)</label>
+                        <label className="flex h-11 cursor-pointer items-center justify-between rounded-xl border border-dashed border-[color:var(--border)] bg-[color:var(--muted)]/30 px-3 transition-all hover:bg-[color:var(--muted)]/50 dark:border-[#3b5986] dark:bg-[#142842] dark:hover:bg-[#1a3151]">
+                          <span className="truncate text-xs text-[color:var(--muted-foreground)]">{taskAssignmentFiles.length > 0 ? `${taskAssignmentFiles.length} file(s) selected` : "Choose files..."}</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.ppt,.pptx,image/*"
+                            onChange={(event) => setTaskAssignmentFiles(Array.from(event.target.files ?? []))}
+                            className="hidden"
+                          />
+                          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-primary/80">Attach</span>
+                        </label>
+                      </div>
                       <div className="md:col-span-2 flex justify-end">
                         <button type="submit" disabled={isCreatingTask} className="button-primary h-11 rounded-xl px-6 text-xs font-black uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-70">
                           {isCreatingTask ? <LoadingSpinner className="h-4 w-4" tone="light" /> : "Assign Task"}
@@ -3400,7 +3500,33 @@ export default function Dashboard() {
                                   Submission: {task.submission_note}
                                 </p>
                               )}
+                              {Array.isArray(task.assignment_attachments) && task.assignment_attachments.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {task.assignment_attachments.map((url, fileIndex) => (
+                                    <a key={`${url}-${fileIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-primary">
+                                      Task File {fileIndex + 1}
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                              {Array.isArray(task.submission_attachments) && task.submission_attachments.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {task.submission_attachments.map((url, fileIndex) => (
+                                    <a key={`${url}-${fileIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700 dark:text-amber-300">
+                                      Submission File {fileIndex + 1}
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                               <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleTaskDelete(task)}
+                                  disabled={updatingTaskId === task.id}
+                                  className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-destructive transition-all hover:bg-destructive hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {updatingTaskId === task.id ? <LoadingSpinner className="h-3 w-3" tone="light" /> : "Delete"}
+                                </button>
                                 {task.status !== "done" && (
                                   <button
                                     type="button"
@@ -3452,6 +3578,42 @@ export default function Dashboard() {
                             placeholder="Progress update for CEO review..."
                             className="mt-3 min-h-[86px] w-full resize-none rounded-xl border border-[color:var(--border)] bg-[color:var(--input)] px-3 py-2 text-sm font-medium outline-none focus:border-primary/35 dark:border-[#3a5986] dark:bg-[#102640]"
                           />
+                        )}
+                        {(task.status === "in_progress" || task.status === "submitted") && (
+                          <label className="mt-2 flex h-10 cursor-pointer items-center justify-between rounded-xl border border-dashed border-[color:var(--border)] bg-[color:var(--muted)]/30 px-3 transition-all hover:bg-[color:var(--muted)]/50 dark:border-[#3b5986] dark:bg-[#142842] dark:hover:bg-[#1a3151]">
+                            <span className="truncate text-xs text-[color:var(--muted-foreground)]">
+                              {(taskSubmissionFiles[task.id] || []).length > 0 ? `${(taskSubmissionFiles[task.id] || []).length} file(s) selected` : "Attach submission files..."}
+                            </span>
+                            <input
+                              type="file"
+                              multiple
+                              accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.ppt,.pptx,image/*"
+                              onChange={(event) => {
+                                const selectedFiles = Array.from(event.target.files ?? []);
+                                setTaskSubmissionFiles((prev) => ({ ...prev, [task.id]: selectedFiles }));
+                              }}
+                              className="hidden"
+                            />
+                            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-primary/80">Attach</span>
+                          </label>
+                        )}
+                        {Array.isArray(task.assignment_attachments) && task.assignment_attachments.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {task.assignment_attachments.map((url, fileIndex) => (
+                              <a key={`${url}-${fileIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-primary">
+                                Task File {fileIndex + 1}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {Array.isArray(task.submission_attachments) && task.submission_attachments.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {task.submission_attachments.map((url, fileIndex) => (
+                              <a key={`${url}-${fileIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700 dark:text-amber-300">
+                                Submission File {fileIndex + 1}
+                              </a>
+                            ))}
+                          </div>
                         )}
 
                         {task.submission_note && task.status === "done" && (
@@ -3879,23 +4041,40 @@ export default function Dashboard() {
                             </div>
 
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Attachment (Optional)</label>
+                              <label className="text-[11px] font-bold text-[color:var(--muted-foreground)] opacity-70">Reference Images (Optional)</label>
                               <label className="flex h-10 cursor-pointer items-center justify-between rounded-lg border border-dashed border-[color:var(--border)] bg-[color:var(--muted)]/30 px-3 transition-all hover:bg-[color:var(--muted)]/50 dark:border-[#3b5986] dark:bg-[#142842] dark:hover:bg-[#1a3151]">
-                                <span className="text-xs text-[color:var(--muted-foreground)] truncate">{update.selectedImage ? update.selectedImage.name : "Choose file..."}</span>
+                                <span className="text-xs text-[color:var(--muted-foreground)] truncate">
+                                  {update.selectedImages.length > 0 ? `${update.selectedImages.length} image(s) selected` : "Choose files..."}
+                                </span>
                                 <ImageIcon size={14} className="text-[color:var(--muted-foreground)]" />
                                 <input
                                   type="file"
                                   accept="image/*"
+                                  multiple
                                   onChange={(e) => {
-                                    const file = e.target.files?.[0] ?? null;
-                                    if (file) notifyLargeImageSelection(file, `Attachment ${idx + 1}`);
+                                    const files = Array.from(e.target.files ?? []);
+                                    files.forEach((file) => notifyLargeImageSelection(file, `Attachment ${idx + 1}`));
                                     const newU = [...updates];
-                                    newU[idx].selectedImage = file;
+                                    newU[idx].selectedImages = files;
                                     setUpdates(newU);
                                   }}
                                   className="hidden"
                                 />
                               </label>
+                              {update.selectedImages.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {update.selectedImages.slice(0, 4).map((file, fileIndex) => (
+                                    <span key={`${file.name}-${fileIndex}`} className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--muted-foreground)]">
+                                      {file.name}
+                                    </span>
+                                  ))}
+                                  {update.selectedImages.length > 4 && (
+                                    <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--muted-foreground)]">
+                                      +{update.selectedImages.length - 4} more
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3986,6 +4165,20 @@ export default function Dashboard() {
                               <p>{update.work_notes}</p>
                               {update.next_steps && <p className="text-[#5f5542] dark:text-[#a8bfdc]">Next: {update.next_steps}</p>}
                               {update.blockers && <p className="text-[#5f5542] dark:text-[#a8bfdc]">Blockers: {update.blockers}</p>}
+                              {Array.isArray(update.image_urls) && update.image_urls.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {update.image_urls.map((url, imageIndex) => (
+                                    <button
+                                      key={`${url}-${imageIndex}`}
+                                      type="button"
+                                      onClick={() => setViewingImage(url)}
+                                      className="rounded border border-[#ceb994] bg-[#efe5ce] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2d2a25] hover:border-primary/40 hover:text-primary dark:border-[#3d5f8e] dark:bg-[#173056] dark:text-[#dce8ff]"
+                                    >
+                                      Image {imageIndex + 1}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>

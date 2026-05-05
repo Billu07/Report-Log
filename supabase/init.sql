@@ -69,7 +69,9 @@ create table if not exists public.tasks (
   assigned_to_email text not null references public.profiles(user_email),
   assigned_by_email text not null references public.profiles(user_email),
   due_date date,
+  assignment_attachments jsonb not null default '[]'::jsonb,
   submission_note text,
+  submission_attachments jsonb not null default '[]'::jsonb,
   submitted_at timestamptz,
   completed_at timestamptz,
   created_at timestamptz not null default now(),
@@ -77,6 +79,12 @@ create table if not exists public.tasks (
   check (priority in ('low', 'medium', 'high', 'urgent')),
   check (status in ('todo', 'in_progress', 'submitted', 'done'))
 );
+
+alter table public.tasks
+  add column if not exists assignment_attachments jsonb not null default '[]'::jsonb;
+
+alter table public.tasks
+  add column if not exists submission_attachments jsonb not null default '[]'::jsonb;
 
 create index if not exists tasks_assigned_to_email_idx
   on public.tasks (assigned_to_email, status, due_date);

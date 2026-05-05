@@ -20,6 +20,24 @@ export const ourFileRouter = {
       console.log("UploadThing: Upload complete", file.ufsUrl);
       return { ufsUrl: file.ufsUrl, url: file.ufsUrl };
     }),
+  taskAttachmentUploader: f({
+    blob: {
+      maxFileSize: "16MB",
+      maxFileCount: 8,
+    },
+  })
+    .middleware(async () => {
+      const hasSecret = !!process.env.UPLOADTHING_SECRET;
+      const hasAppId = !!process.env.UPLOADTHING_APP_ID;
+      if (!hasSecret || !hasAppId) {
+        throw new Error("Missing UploadThing environment variables");
+      }
+      return {};
+    })
+    .onUploadComplete(async ({ file }) => {
+      console.log("UploadThing: Task attachment upload complete", file.ufsUrl);
+      return { ufsUrl: file.ufsUrl, url: file.ufsUrl };
+    }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter;

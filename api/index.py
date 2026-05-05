@@ -89,6 +89,7 @@ class ProjectUpdate(BaseModel):
     next_steps: Optional[str] = None
     blockers: Optional[str] = None
     image_url: Optional[str] = None
+    image_urls: Optional[list[str]] = None
     completion_percent: Optional[int] = Field(default=None, ge=0, le=100)
 
 class DailyReportRecord(BaseModel):
@@ -177,7 +178,9 @@ class TaskRecord(BaseModel):
     assigned_by_name: Optional[str] = None
     assigned_by_avatar: Optional[str] = None
     due_date: Optional[date] = None
+    assignment_attachments: list[str] = Field(default_factory=list)
     submission_note: Optional[str] = None
+    submission_attachments: list[str] = Field(default_factory=list)
     submitted_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
@@ -189,10 +192,12 @@ class CreateTaskRequest(BaseModel):
     assigned_to_email: str
     due_date: Optional[date] = None
     priority: Literal["low", "medium", "high", "urgent"] = "medium"
+    attachment_urls: list[str] = Field(default_factory=list)
 
 class UpdateTaskStatusRequest(BaseModel):
     status: Literal["todo", "in_progress", "submitted", "done"]
     submission_note: Optional[str] = Field(default=None, max_length=3000)
+    submission_attachment_urls: Optional[list[str]] = None
 
 # --- AUTH DEPENDENCY ---
 
@@ -250,8 +255,11 @@ def build_prompt(updates: list[dict[str, Any]]) -> str:
             prompt += f"Proposed Next Steps: {update['next_steps']}\n"
         if update.get('blockers'):
             prompt += f"Current Blockers: {update['blockers']}\n"
-        if update.get('image_url'):
-            prompt += f"Attached Image URL: {update['image_url']}\n"
+        image_urls = extract_image_urls(update)
+        if image_urls:
+            prompt += "Attached Image URLs:\n"
+            for url in image_urls:
+                prompt += f"- {url}\n"
     return prompt
 
 async def fetch_image_payload(image_url: str) -> Optional[dict[str, Any]]:
@@ -266,9 +274,10 @@ async def try_gemini(updates: list[dict[str, Any]]) -> str:
     if not GEMINI_API_KEY: raise RuntimeError("No Gemini Key")
     contents: list[Any] = [build_prompt(updates)]
     for update in updates:
-        if update.get('image_url'):
-            img = await fetch_image_payload(update['image_url'])
-            if img: contents.append(img)
+        for image_url in extract_image_urls(update)[:4]:
+            img = await fetch_image_payload(image_url)
+            if img:
+                contents.append(img)
     model_candidates = [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]
     for model_name in model_candidates:
         if not model_name:
@@ -329,7 +338,7 @@ async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
         work_notes = clean_text(update.get("work_notes")) or "No execution notes submitted."
         next_steps = clean_text(update.get("next_steps"))
         blockers = clean_text(update.get("blockers"))
-        image_url = clean_text(update.get("image_url"))
+        image_urls = extract_image_urls(update)
         completion_percent = normalize_completion_percent(update.get("completion_percent"))
 
         lines.append(f"\n## {index}. {project_name}")
@@ -340,7 +349,7 @@ async def generate_report(updates: list[dict[str, Any]]) -> tuple[str, str]:
             lines.append(f"- **Next Steps:** {next_steps}")
         if blockers:
             lines.append(f"- **Blockers:** {blockers}")
-        if image_url:
+        for image_url in image_urls:
             lines.append(f"![Proof of Work]({image_url})")
 
     return "\n".join(lines), "factual-formatter"
@@ -354,6 +363,7 @@ def build_optimize_prompt(updates: list[dict[str, Any]], style: str) -> str:
                 "next_steps": u.get("next_steps"),
                 "blockers": u.get("blockers"),
                 "image_url": u.get("image_url"),
+                "image_urls": extract_image_urls(u),
                 "completion_percent": u.get("completion_percent"),
             }
             for u in updates
@@ -368,10 +378,10 @@ def build_optimize_prompt(updates: list[dict[str, Any]], style: str) -> str:
         "- Do not invent work, blockers, or next steps.\n"
         "- Keep completion_percent unchanged when provided.\n"
         "- Keep project_name unchanged unless grammar fixes are needed.\n"
-        "- Keep image_url exactly as provided.\n"
+        "- Keep image_url/image_urls exactly as provided.\n"
         "- Fix grammar, punctuation, and readability only.\n"
         "- Return strict JSON only (no markdown fences) in this shape:\n"
-        "  {\"updates\": [{\"project_name\": string, \"work_notes\": string, \"next_steps\": string|null, \"blockers\": string|null, \"image_url\": string|null, \"completion_percent\": number|null}]}\n\n"
+        "  {\"updates\": [{\"project_name\": string, \"work_notes\": string, \"next_steps\": string|null, \"blockers\": string|null, \"image_url\": string|null, \"image_urls\": string[], \"completion_percent\": number|null}]}\n\n"
         f"Input updates JSON:\n{serialized}"
     )
 
@@ -460,13 +470,15 @@ def normalize_optimized_updates(
         original_work_notes = normalize_text(original.get("work_notes"))
         original_next_steps = normalize_text(original.get("next_steps"))
         original_blockers = normalize_text(original.get("blockers"))
-        original_image_url = normalize_text(original.get("image_url"))
+        original_image_urls = extract_image_urls(original)
 
         candidate_project_name = candidate.get("project_name")
         candidate_work_notes = candidate.get("work_notes")
         candidate_next_steps = candidate.get("next_steps")
         candidate_blockers = candidate.get("blockers")
-        candidate_image_url = normalize_text(candidate.get("image_url"))
+        candidate_image_urls = normalize_url_list(candidate.get("image_urls"))
+        if not candidate_image_urls:
+            candidate_image_urls = normalize_url_list(candidate.get("image_url"))
 
         project_name = safe_rewrite(original_project_name, candidate_project_name) or original_project_name
         work_notes = safe_rewrite(original_work_notes, candidate_work_notes) or original_work_notes
@@ -481,11 +493,11 @@ def normalize_optimized_updates(
             rewritten_blockers = safe_rewrite(original_blockers, candidate_blockers)
             blockers = rewritten_blockers or original_blockers
 
-        # Preserve attachment URL exactly unless original is missing.
-        if original_image_url:
-            image_url = original_image_url
+        # Preserve attachments exactly unless original is missing.
+        if original_image_urls:
+            image_urls = original_image_urls
         else:
-            image_url = candidate_image_url or None
+            image_urls = candidate_image_urls
 
         completion_candidate = normalize_completion_percent(candidate.get("completion_percent"))
         completion_original = normalize_completion_percent(original.get("completion_percent"))
@@ -496,7 +508,8 @@ def normalize_optimized_updates(
                 "work_notes": work_notes or original_work_notes,
                 "next_steps": next_steps if next_steps else (original_next_steps or None),
                 "blockers": blockers if blockers else (original_blockers or None),
-                "image_url": image_url if image_url else (original_image_url or None),
+                "image_urls": image_urls,
+                "image_url": image_urls[0] if image_urls else None,
                 "completion_percent": completion_candidate if completion_candidate is not None else completion_original,
             }
         )
@@ -575,13 +588,15 @@ def fallback_optimize_updates(updates: list[dict[str, Any]]) -> list[dict[str, A
         work_notes = polish_fallback_text(update.get("work_notes"))
         next_steps = polish_fallback_text(update.get("next_steps")) if update.get("next_steps") else None
         blockers = polish_fallback_text(update.get("blockers")) if update.get("blockers") else None
+        image_urls = extract_image_urls(update)
         fallback.append(
             {
                 "project_name": str(update.get("project_name") or "").strip(),
                 "work_notes": work_notes,
                 "next_steps": next_steps,
                 "blockers": blockers,
-                "image_url": update.get("image_url"),
+                "image_urls": image_urls,
+                "image_url": image_urls[0] if image_urls else None,
                 "completion_percent": normalize_completion_percent(update.get("completion_percent")),
             }
         )
@@ -628,6 +643,27 @@ def trim_optional_text(value: Any) -> Optional[str]:
     text = " ".join(str(value or "").split()).strip()
     return text or None
 
+def normalize_url_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_values = value
+    elif isinstance(value, str):
+        raw_values = [value]
+    else:
+        raw_values = []
+    normalized: list[str] = []
+    for item in raw_values:
+        candidate = str(item or "").strip()
+        if candidate:
+            normalized.append(candidate)
+    return normalized
+
+def extract_image_urls(update: dict[str, Any]) -> list[str]:
+    image_urls = normalize_url_list(update.get("image_urls"))
+    if image_urls:
+        return image_urls
+    fallback = str(update.get("image_url") or "").strip()
+    return [fallback] if fallback else []
+
 async def hydrate_tasks(task_rows: list[dict[str, Any]]) -> list[TaskRecord]:
     if not task_rows:
         return []
@@ -661,6 +697,8 @@ async def hydrate_tasks(task_rows: list[dict[str, Any]]) -> list[TaskRecord]:
             "assigned_by_email": assigned_by_email,
             "status": normalize_task_status(row.get("status")),
             "priority": normalize_task_priority(row.get("priority")),
+            "assignment_attachments": normalize_url_list(row.get("assignment_attachments")),
+            "submission_attachments": normalize_url_list(row.get("submission_attachments")),
             "assigned_to_name": assigned_to_profile.get("full_name") or assigned_to_email,
             "assigned_to_avatar": assigned_to_profile.get("avatar_url"),
             "assigned_by_name": assigned_by_profile.get("full_name") or assigned_by_email,
@@ -745,7 +783,14 @@ async def submit_new_report(request: SubmitReportRequest, user: Any = Depends(ge
         "author_email": user.email,
         "raw_text": json.dumps(original_updates),
         "formatted_report": formatted,
-        "image_url": next((u["image_url"] for u in optimized_updates if u["image_url"]), None)
+        "image_url": next(
+            (
+                extract_image_urls(u)[0]
+                for u in optimized_updates
+                if extract_image_urls(u)
+            ),
+            None,
+        )
     }
     resp = await run_in_threadpool(supabase.table("daily_reports").insert(payload).execute)
     provider_chain = f"optimize:{optimize_provider}|format:{format_provider}"
@@ -804,7 +849,9 @@ async def create_task(request: CreateTaskRequest, user: Any = Depends(get_curren
         "assigned_to_email": assigned_to_email,
         "assigned_by_email": user_email,
         "due_date": request.due_date.isoformat() if request.due_date else None,
+        "assignment_attachments": normalize_url_list(request.attachment_urls),
         "submission_note": None,
+        "submission_attachments": [],
         "submitted_at": None,
         "completed_at": None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -859,12 +906,27 @@ async def update_task_status(task_id: str, request: UpdateTaskStatusRequest, use
 
     if request.submission_note is not None:
         payload["submission_note"] = trim_optional_text(request.submission_note)
+    if request.submission_attachment_urls is not None:
+        payload["submission_attachments"] = normalize_url_list(request.submission_attachment_urls)
 
     updated_resp = await run_in_threadpool(supabase.table("tasks").update(payload).eq("id", task_id).execute)
     if not updated_resp.data:
         raise HTTPException(status_code=500, detail="Unable to update task")
     hydrated = await hydrate_tasks(updated_resp.data)
     return hydrated[0]
+
+@app.delete("/api/backend/tasks/{task_id}")
+async def delete_task(task_id: str, user: Any = Depends(get_current_user)):
+    user_email = (user.email or "").strip().lower()
+    if not is_ceo_user(user_email):
+        raise HTTPException(status_code=403, detail="Only CEO can delete tasks")
+
+    existing_resp = await run_in_threadpool(supabase.table("tasks").select("id").eq("id", task_id).limit(1).execute)
+    if not existing_resp.data:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    await run_in_threadpool(supabase.table("tasks").delete().eq("id", task_id).execute)
+    return {"status": "ok"}
 
 @app.get("/api/backend/notifications", response_model=list[NotificationRecord])
 async def get_notifications(user: Any = Depends(get_current_user)):
